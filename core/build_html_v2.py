@@ -250,31 +250,70 @@ LAYOUT_PROMPT = textwrap.dedent("""\
 - .callout-blue → 藍色提示（資訊/背景）
 
 ══════════════════════════════════════
-排版規則（務必遵守）
+排版規則（極為重要，務必逐條遵守）
 ══════════════════════════════════════
 
-1. 整體結構必須包裝在 <div class="page"> 內
-2. 文件分為上下兩大區塊：
-   - 上半部：摘要儀表板（卡片化排版，像專業的報告首頁）
-   - <div class="section-divider"></div> 分隔
-   - 下半部：詳細會議紀要（使用 detail-heading / detail-para / detail-bullets）
-3. 上半部「摘要儀表板」：
-   - 必須以 .main-title、.sub-title、.objective 開場
-   - 根據會議內容性質，選擇最適合的組件組合來呈現重點
-   - 如果有財務數據 → 必須使用數據面板 (D)
-   - 如果有明確結論/金句 → 必須使用金句區塊 (E)
-   - 如果有明確分工 → 考慮使用人員職責卡 (H)
-   - 如果有時間節點/里程碑 → 考慮使用時間軸 (G)
-   - 主題重點 → 使用主題卡片瀑布流 (F)
-   - Action Items 摘要 → 使用執行清單 (I)
-4. 下半部「詳細會議紀要」：
-   - 以 meeting.sections 為基礎，每段用 detail-heading + detail-para + detail-bullets
-   - 最後一段放 Action Items 詳細清單 (L)
-5. 最後加上 footer：<div class="footer">本文件由 AI 自動產生 · 生成時間：{gen_time} · 內容依逐字稿整理，如有出入以錄音為準</div>
-6. 所有文字必須使用繁體中文
-7. 所有特殊字元必須做 HTML 跳脫（& → &amp; 等）
-8. 只輸出 HTML 標記，不要加說明文字、不要用 markdown code block
-9. 確保 page-break-inside:avoid 的組件不會被拆開
+■ 整體結構：
+1. 所有內容必須包裝在 <div class="page"> 內
+2. 文件分為上下兩大區塊，中間以 <div class="section-divider"></div> 分隔：
+   - 上半部 = 摘要儀表板（卡片化排版，像專業的商業報告首頁）
+   - 下半部 = 詳細會議紀要
+
+■ 上半部「摘要儀表板」（最關鍵！決定第一印象）：
+
+【第一區：標題】
+- 必須以 .main-title、.sub-title、.objective 依序開場
+
+【第二區：核心卡片橫排（強制規定）】
+- ★★★ 標題之後，必須立即使用 grid-2 或 grid-3 或 grid-2-1 將 2~3 張卡片「橫向並排」 ★★★
+- 這是讓首頁看起來像「儀表板」而非「清單」的最關鍵設計！
+- 典型組合範例（請依據內容靈活選擇）：
+  ‣ grid-3：[問題卡片] + [數據面板] + [解方金句]（三張齊排）
+  ‣ grid-2-1：[問題卡片(寬)] + [數據面板(窄)]
+  ‣ grid-2：[問題卡片] + [解方金句]
+- 問題卡片 (.card) 幾乎每場會議都有，務必放在橫排的第一格
+- 如果有 key_numbers 數據 → 必須使用 .card-num 搭配 .num-block/.num-row/.num-value
+- 如果有 solution_title/solution_quote → 必須使用 .card-teal 搭配 .solution-quote/.solution-sub
+- 禁止將這些卡片垂直堆疊！必須橫向排列！
+
+【第三區：主題重點】
+- 使用 .masonry 搭配 .masonry-col 呈現 themes 主題卡片
+- 根據主題數量決定欄數：2個主題用2欄，3~6個用3欄
+- 每張主題卡片使用 .card.card-soft + .theme-title + .card-body
+
+【第四區：人員職責卡（若會議中有明確分工/指派職責）】
+- ★ 若 action_groups 中有多位不同負責人，且各人有不同性質的工作 → 必須使用人員職責卡 (H)
+- 使用 .role-grid（設定 grid-template-columns 為 repeat(N,1fr)，N=人數，最多4欄）
+- 每人一張 .role-card，包含 .role-icon（用表情符號如🏭👷📋🔧）、.role-name、.role-title、.role-desc
+
+【第五區：Action Items 摘要版（強制規定）】
+- ★★★ 摘要儀表板的最後一個區塊，必須放 Action Items 執行清單 (I) ★★★
+- 這個區塊必須出現在 .section-divider 之前！
+- 使用 .ai-section > .ai-header + .ai-body > .ai-row > .ai-group 結構
+- 每個 .ai-row 用 grid-template-columns 排列 2~3 位負責人
+- 每位負責人的項目用 .ai-sum-num 編號
+
+■ 下半部「詳細會議紀要」：
+- 用 <div class="detail-section"> 包裹
+- 以 meeting.sections 為基礎，每段使用：
+  ‣ .detail-heading → 段落標題
+  ‣ .detail-para → 正文段落（保留具體案例、數據計算）
+  ‣ .detail-bullets > li.lv1 / li.lv2 → 條列重點
+  ‣ .detail-closing → 段落結語（若有）
+- 最後一段放 Action Items 詳細清單 (L)：
+  ‣ .detail-heading 標題為「Action Items 詳細清單」
+  ‣ 每位負責人用 .ai-owner + .ai-owner-items > li（帶 .ai-num 編號）
+  ‣ ★ 每位負責人的編號必須獨立從 1 開始計數，不可整體累加（例：@廠長 1,2,3 → @阿群 1,2,3 → ...）
+
+■ 頁尾：
+- 最後加上：<div class="footer">本文件由 AI 自動產生 &middot; 生成時間：{gen_time} &middot; 內容依逐字稿整理，如有出入以錄音為準</div>
+
+■ 格式規範：
+- 所有文字必須使用繁體中文
+- 所有特殊字元必須做 HTML 跳脫（& → &amp; 等）
+- 只輸出 HTML 標記，不要加任何說明文字，不要用 markdown code block 包裹
+- 不要自己發明新的 CSS class，只使用上面列出的組件
+- 確保有 page-break-inside:avoid 的組件不會被截斷
 
 ═══════════════════════════════════════
 會議資料 JSON
