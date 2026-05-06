@@ -69,9 +69,13 @@ def show_menu():
 
     key_status = f"（已設定 {key_count} 組）" if key_count > 0 else "（未設定，功能 1/2 無法使用）"
 
+    # 取得版本與檢查更新
+    from core.updater import get_version_string, check_for_updates
+    version = get_version_string()
+    
     print()
     print("=" * 55)
-    print("  會議記錄工具箱 v2.0")
+    print(f"  會議記錄工具箱 {version}")
     print("=" * 55)
     print()
     print("  請選擇功能：")
@@ -92,6 +96,10 @@ def main():
     """主程式入口"""
     # 安裝基本套件
     ensure_base_packages()
+
+    # 啟動時檢查更新（靜默模式，若無新版不印東西；有新版才提示）
+    from core.updater import check_for_updates
+    check_for_updates(silent=True)
 
     # 如果有傳入檔案路徑（拖曳檔案到 .bat 上），依檔案類型決定動作
     if len(sys.argv) > 1:
