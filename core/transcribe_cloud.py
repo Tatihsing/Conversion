@@ -20,11 +20,12 @@ from .shared import (
     pick_audio_file, require_api_key, MODEL_AUDIO
 )
 
-CHUNK_THRESHOLD_MIN = 25    # 超過此分鐘數才切段
-CHUNK_SIZE_MIN      = 20    # 每段長度（分鐘）
-PROCESSING_TIMEOUT  = 300   # PROCESSING 等待上限（秒）
-API_TIMEOUT_SHORT   = 900   # < 25 分鐘音訊的 API 逾時（秒）
-API_TIMEOUT_CHUNK   = 720   # 每段的 API 逾時（秒）
+CHUNK_THRESHOLD_MIN  = 25    # 超過此分鐘數才切段
+CHUNK_THRESHOLD_MB   = 50    # 超過此 MB 也切段（應對高位元率短音訊）
+CHUNK_SIZE_MIN       = 20    # 每段長度（分鐘）
+PROCESSING_TIMEOUT   = 300   # PROCESSING 等待上限（秒）
+API_TIMEOUT_SHORT    = 900   # < 25 分鐘音訊的 API 逾時（秒）
+API_TIMEOUT_CHUNK    = 720   # 每段的 API 逾時（秒）
 
 
 # ── ffmpeg 定位（跨機器容錯）────────────────────────────────────────────────
@@ -301,23 +302,34 @@ def _transcribe_chunked(mp3_path: Path, glossary: dict, max_retries: int) -> str
 def transcribe_audio(mp3_path: Path, glossary: dict, max_retries: int = 10) -> str:
     """
     音訊 → 逐字稿（對外唯一接口）
-    - 若 ffmpeg 可用且音訊 > CHUNK_THRESHOLD_MIN 分鐘：自動切段轉錄
-    - 若 ffmpeg 不可用：直接整段上傳（加長逾時）
-    - 若 ffmpeg 切割失敗：自動退回整段模式
+    切段觸發條件（任一成立即切段）：
+    - 時長 > CHUNK_THRESHOLD_MIN 分鐘
+    - 檔案大小 > CHUNK_THRESHOLD_MB MB
     """
     duration = get_audio_duration(mp3_path)
     duration_min = duration / 60
+    size_mb = mp3_path.stat().st_size / 1024 / 1024
 
     if duration > 0:
-        print(f"[INFO] 音訊時長：{duration_min:.1f} 分鐘")
+        print(f"[INFO] 音訊時長：{duration_min:.1f} 分鐘，大小：{size_mb:.1f} MB")
     else:
-        print(f"[INFO] 無法偵測音訊時長（ffprobe 不可用），直接上傳")
+        print(f"[INFO] 無法偵測音訊時長（ffprobe 不可用），大小：{size_mb:.1f} MB")
 
-    if _FFMPEG and duration_min > CHUNK_THRESHOLD_MIN:
-        print(f"[CHUNK] 音訊 > {CHUNK_THRESHOLD_MIN} 分鐘，自動切成 {CHUNK_SIZE_MIN} 分鐘段落分批轉錄")
+    need_chunk = _FFMPEG and (
+        duration_min > CHUNK_THRESHOLD_MIN or
+        size_mb > CHUNK_THRESHOLD_MB
+    )
+    reason = []
+    if duration_min > CHUNK_THRESHOLD_MIN:
+        reason.append(f"時長 {duration_min:.0f}分鐘 > {CHUNK_THRESHOLD_MIN}分鐘")
+    if size_mb > CHUNK_THRESHOLD_MB:
+        reason.append(f"大小 {size_mb:.0f}MB > {CHUNK_THRESHOLD_MB}MB")
+
+    if need_chunk:
+        print(f"[CHUNK] 自動切段（{' 且 '.join(reason)}）")
         return _transcribe_chunked(mp3_path, glossary, max_retries)
-    elif not _FFMPEG and duration_min > CHUNK_THRESHOLD_MIN:
-        print(f"[WARN] ffmpeg 不可用，長音訊將直接整段上傳（逾時上限 1800 秒）")
+    elif not _FFMPEG and (duration_min > CHUNK_THRESHOLD_MIN or size_mb > CHUNK_THRESHOLD_MB):
+        print(f"[WARN] ffmpeg 不可用，長/大音訊將直接整段上傳（逾時上限 1800 秒）")
         print(f"[TIP]  若要啟用自動切段，請安裝 ffmpeg 並加入 PATH，或放入 tools/ 目錄")
         return _transcribe_single(mp3_path, glossary, max_retries, api_timeout=1800)
     else:
