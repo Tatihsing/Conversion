@@ -1,0 +1,40 @@
+# Python 環境（太大不進版控）
+python/
+
+# 音訊/影片檔
+*.mp3
+*.m4a
+*.wav
+*.aac
+*.ogg
+*.flac
+*.mp4
+*.mkv
+*.mov
+
+# 產出檔案
+*.pdf
+*.docx
+*.html
+output/
+
+# 壓縮檔
+*.rar
+*.zip
+*.7z
+
+# 暫存
+__pycache__/
+*.pyc
+*.exe
+
+# 測試用大檔
+test/*.mp3
+test/*.png
+
+# 備份資料夾
+20260504/
+20260505/
+
+# 其他
+.gemini/

@@ -1,0 +1,18 @@
+# Gemini API Key 設定檔
+# 每行一個 Key，程式會自動輪換
+# 以 # 開頭的行為註解，會被忽略
+# 申請網址：https://aistudio.google.com/apikey
+
+# 第一組 Key（必填）
+AIzaSyCJcXfWBRmv78wTYfrG--M_r0Z45IoczMo
+
+# 第二組 Key（選填，用於輪換）
+AIzaSyB9FRoHRbivhNo8nnKbA4dIWjfu8HVYoR0
+
+# 第三組 Key（選填）
+AIzaSyDcW_3H845lpLaykz56Hv0Wql5_mm6v4R4
+
+# 第四組 Key（選填）
+AIzaSyChp-OQCL5p1Su7FsQu3SB90E-m8VEC9lo
+# 第五組 Key（選填）
+AIzaSyB1RY8GBb59i1wRs8x3hFD1fuhA_L1pXNc
