@@ -23,10 +23,12 @@ output/
 *.zip
 *.7z
 
-# 暫存
+# 暫存與敏感資訊
 __pycache__/
 *.pyc
 *.exe
+api_keys.txt
+*.json
 
 # 測試用大檔
 test/*.mp3
