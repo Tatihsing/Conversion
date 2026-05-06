@@ -4,7 +4,7 @@ sys.path.insert(0, r"D:\錄音檔\meeting-auto")
 os.chdir(r"D:\錄音檔\meeting-auto")
 
 from core.shared import get_key_pool, load_glossary, apply_glossary
-from core.pipeline import transcript_to_dicts
+from core.pipeline import transcript_to_dicts, get_recording_date
 from core.build_html_v3 import build_html_v3
 from core.html_to_pdf import html_to_pdf
 from pathlib import Path
@@ -31,12 +31,16 @@ else:
         transcript = apply_glossary(transcript, glossary)
     print(f"[OK] 逐字稿 {len(transcript):,} 字")
 
+    # 統一用 get_recording_date（檔名 → 同名音訊 mtime → 檔案 mtime）
+    recording_date = get_recording_date(txt_path)
+
     print("\n── Pass 1：AI 提煉內容（新 Prompt）──")
-    summary, meeting = transcript_to_dicts(transcript)
+    summary, meeting = transcript_to_dicts(transcript, recording_date=recording_date)
 
     with open(cache_path, 'w', encoding='utf-8') as f:
         json.dump({"summary": summary, "meeting": meeting}, f, ensure_ascii=False, indent=2)
     print(f"[CACHE] Pass 1 結果已快取：{cache_path.name}")
+
 
 # 預覽關鍵欄位
 print(f"\n── 本次 Pass 1 結果預覽 ──")

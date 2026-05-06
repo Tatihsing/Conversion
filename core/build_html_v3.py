@@ -30,9 +30,11 @@ def _problems_html(problems):
 def _num_rows_html(key_numbers):
     html = ''
     for n in key_numbers:
-        red_cls = ' red' if n.get('red') else ''
+        is_red = n.get('red', False)
+        red_cls = ' red' if is_red else ''
+        row_cls = ' red-row' if is_red else ''
         html += f'''
-        <div class="num-row">
+        <div class="num-row{row_cls}">
           <div class="num-value{red_cls}">{esc(n.get("value",""))}</div>
           <div class="num-label">{esc(n.get("label",""))}</div>
           <div class="num-unit">{esc(n.get("unit",""))}</div>
@@ -248,12 +250,15 @@ body{font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;background:#f0f0
 
 /* ── 數字卡 ── */
 .num-block{margin-top:2px;flex-grow:1;}
-.num-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px dashed #C5E1A5;}
+.num-row{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px dashed #C5E1A5;}
 .num-row:last-child{border-bottom:none;}
-.num-value{font-size:26px;font-weight:700;color:#2E7D32;line-height:1;min-width:60px;letter-spacing:-.5px;}
-.num-value.red{color:#C62828;}
-.num-label{font-size:12px;font-weight:600;color:#333;flex:1;}
-.num-unit{font-size:10px;color:#888;}
+.num-value{font-size:26px;font-weight:700;color:#2E7D32;line-height:1;min-width:55px;letter-spacing:-.5px;}
+.num-value.red{color:#B71C1C;}
+.num-row.red-row{background:#FFF3F3;border-radius:5px;padding:5px 8px;margin:1px -8px;border-bottom:1px solid #FFCDD2;border-left:4px solid #B71C1C;}
+.num-row.red-row .num-value{font-size:28px;}
+.num-row.red-row .num-label{color:#B71C1C;font-weight:700;}
+.num-label{font-size:11.5px;font-weight:600;color:#333;flex:1;line-height:1.4;}
+.num-unit{font-size:10px;color:#888;white-space:nowrap;}
 
 /* ── 解方卡 ── */
 .solution-quote{font-size:15px;font-weight:700;color:#1B5E20;margin:7px 0 10px;line-height:1.5;padding:8px 12px;background:#F1F8E9;border-radius:6px;border-left:4px solid #43A047;}

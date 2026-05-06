@@ -5,6 +5,7 @@ pipeline.py
 
 import sys
 import re
+import os
 import json
 import textwrap
 from pathlib import Path
@@ -15,9 +16,90 @@ from .shared import (
     MODEL_AUDIO, MODEL_TEXT, CORE_DIR
 )
 from .transcribe_cloud import transcribe_audio
-from .build_html import build_html
+from .build_html_v3 import build_html_v3   # v3 程式碼控制排版（主要引擎）
+from .build_html import build_html           # v1 保留作為備用
 from .build_docx import build_docx
 from .html_to_pdf import html_to_pdf
+
+
+def extract_number_contexts(text: str, window: int = 100, min_value: int = 100) -> str:
+    """
+    前處理：從逐字稿中提取所有數字及前後文
+    - window: 數字前後各取多少字
+    - min_value: 排除小於此值的數字（避免拉圈無意義的小數字）
+    回傳：格式化的數字上下文字串，用於注入 Prompt
+    """
+    # 找所有數字（含千分位逗號）
+    pattern = re.compile(r'\d[\d,]*')
+    seen_values = set()
+    results = []
+
+    for m in pattern.finditer(text):
+        raw = m.group().replace(',', '')
+        try:
+            val = int(raw)
+        except ValueError:
+            continue
+        if val < min_value:
+            continue
+        if val in seen_values:
+            continue
+        seen_values.add(val)
+
+        start = max(0, m.start() - window)
+        end = min(len(text), m.end() + window)
+        ctx = text[start:end].replace('\n', ' ').strip()
+        results.append(f'- {m.group()}：「...{ctx}...」')
+
+    if not results:
+        return ''
+
+    header = (
+        '\n[逐字稿數字上下文清單 — 請優先參考這些數字進行 key_numbers 提取]\n'
+        '（下方為逐字稿中出現的所有重要數字及其前後文，每個數字獨立出現一次）\n'
+    )
+    return header + '\n'.join(results) + '\n\n'
+
+
+def get_recording_date(file_path: Path) -> str:
+    """
+    取得錄音/逐字稿的日期，格式 MM-DD
+    優先順序：
+    1. 檔名中的日期（YYYYMMDD 或 YYYY-MM-DD）— 最可靠，代表使用者命名習慣
+    2. 若是 .txt 且同目錄有同名音訊檔，用音訊檔的 mtime
+    3. 退回使用該檔案的 mtime（錄音後通常不會更動 mtime）
+    """
+    stem = file_path.stem
+
+    # 嘗試解析檔名中的日期
+    # 支援：20260421、2026-04-21、2026_04_21、20260421_xxx 等
+    patterns = [
+        r'(\d{4})[-_]?(\d{2})[-_]?(\d{2})',   # YYYY-MM-DD 或 YYYYMMDD
+    ]
+    for pat in patterns:
+        m = re.search(pat, stem)
+        if m:
+            month, day = m.group(2), m.group(3)
+            date_str = f'{month}-{day}'
+            print(f'[INFO] 日期來源：檔名解析 → {date_str}')
+            return date_str
+
+    # 若是 TXT，尋找同目錄同名的音訊檔（比 txt 更接近錄音時間）
+    audio_exts = ('.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac')
+    if file_path.suffix.lower() == '.txt':
+        for ext in audio_exts:
+            audio_path = file_path.with_suffix(ext)
+            if audio_path.exists():
+                mtime = audio_path.stat().st_mtime
+                date_str = datetime.fromtimestamp(mtime).strftime('%m-%d')
+                print(f'[INFO] 日期來源：同名音訊檔 mtime ({audio_path.name}) → {date_str}')
+                return date_str
+
+    # 退回：使用輸入檔的 mtime
+    mtime = file_path.stat().st_mtime
+    date_str = datetime.fromtimestamp(mtime).strftime('%m-%d')
+    print(f'[INFO] 日期來源：檔案 mtime ({file_path.name}) → {date_str}')
+    return date_str
 
 
 # ── 整理 Prompt ───────────────────────────────────────────────────────────────
@@ -100,7 +182,20 @@ DICT_PROMPT = textwrap.dedent("""\
   你應計算合計並以「每人每日全成本 X 元」呈現，而不是把每個明細拆開列出
 - 【保守原則】：若講者只是隨口提及某個數字，無明顯加總意圖，則直接用該數字，不要強行加總
 - 若計算出推導數字，在 label 中說明（如「每人每日全成本（薪資+差旅+油資合計）」）
-- 用 red: true 標記虧損、超支、下降等負面指標
+- 數量控制：key_numbers 最多 4 個，優先選最具衝擊力的結論數字
+- 【最高優先級】損益結論句型：若逐字稿中出現「收X付Y」「賠Z」「虧損Z」「成本X報價Y」等
+  損益結論，這些是最重要的 key_numbers，必須優先提取：
+  範例：「我們收6000，要付6600，每天每人賠600」→
+    提取：{"value":"6,000","label":"每日業務報價","unit":"元"}
+         {"value":"6,600","label":"每日實際成本","unit":"元"}
+         {"value":"-600","label":"每人每日虧損","unit":"元","red":true}
+  而不是去列個別費用明細（250日支、400補貼等）
+- 【次要】若有全成本合計（如6,462）且明確說出，也應列入
+- red: true 使用場景：
+  * 虧損、赤字、負值（每日賠600 → -600，red:true）
+  * 「現況偏低且需調整」的數字（現行250遠低於合理水準400，標現況250 red:true）
+  * 講者用「賠」「虧」「不合理」「問題」語氣描述的數字
+- 若有現況 vs 建議對比，建議值不標 red；現況明顯不足才標 red
 - 無財務數字時設為空列表 []
 
 ■ 主題卡片（themes）— 適用任何會議類型：
@@ -134,17 +229,31 @@ DICT_PROMPT = textwrap.dedent("""\
 """)
 
 
-def transcript_to_dicts(transcript: str) -> tuple:
-    """逐字稿 → SUMMARY + MEETING dict"""
+def transcript_to_dicts(transcript: str, recording_date: str = '') -> tuple:
+    """逐字稿 → SUMMARY + MEETING dict
+    Args:
+        transcript: 逐字稿文字
+        recording_date: 錄音/會議日期，格式 MM-DD（如 04-21），空字串表示由 AI 自行推斷
+    """
     print("[AI] Gemini 整理逐字稿中...")
-    
+
+    # 若有確切日期，在 Prompt 開頭明確告知，避免 AI 猜測
+    if recording_date:
+        date_hint = f"【重要】本次會議的錄音日期為：{recording_date}。big_title 的日期前綴請直接使用此日期，不要另行推斷。\n\n"
+    else:
+        date_hint = ''
+
+    # 注入數字上下文清單
+    number_hint = extract_number_contexts(transcript)
+    prompt = DICT_PROMPT + date_hint + number_hint + transcript
+
     max_attempts = 3
     for attempt in range(max_attempts):
         try:
-            resp = gemini_call_with_retry(MODEL_TEXT, DICT_PROMPT + transcript, json_mode=True)
+            resp = gemini_call_with_retry(MODEL_TEXT, prompt, json_mode=True)
             raw = resp.text.strip()
             data = extract_json(raw)
-            break  # 成功解析則跳出迴圈
+            break
         except Exception as e:
             if attempt < max_attempts - 1:
                 print(f"[WARN] JSON 格式錯誤，重新生成中（第 {attempt + 1} 次重試）...")
@@ -225,10 +334,12 @@ def run(file_path=None):
         print(f"[ERR] 不支援的檔案格式：{input_file.suffix}")
         return
 
-    # Step 2：逐字稿 → dicts
+    # Step 2：逐字稿 → dicts（傳入錄音日期，避免 AI 猜測）
     _pool = get_key_pool()
     print(f"\n── Step 2：整理會議記錄 ── [使用 Key {_pool.index + 1}/{len(_pool.keys)}]")
-    summary, meeting = transcript_to_dicts(transcript)
+    # 取得錄音日期（優先解析檔名 → 同名音訊 mtime → 檔案 mtime）
+    recording_date = get_recording_date(input_file)
+    summary, meeting = transcript_to_dicts(transcript, recording_date=recording_date)
 
     # 取標題作為檔名
     title = summary.get("sub_title", "會議記錄").replace("/", "_").replace("\\", "_")[:30]
@@ -246,10 +357,14 @@ def run(file_path=None):
     # )
     # print(f"[OK] 資料檔已儲存：{json_path}")
 
-    # Step 4：產出 HTML（中介檔，供 PDF 使用，不另存通知）
+    # Step 4：產出 HTML（中介檔，供 PDF 使用）— 使用 v3 程式碼控制排版引擎
     html_filename = f"{stem}.html"
     html_path = output_dir / html_filename
-    build_html(summary, meeting, str(html_path))
+    try:
+        build_html_v3(summary, meeting, str(html_path))
+    except Exception as e:
+        print(f"[WARN] v3 渲染失敗：{e}，備用 v1 引擎")
+        build_html(summary, meeting, str(html_path))
 
     # Step 5：產出 Word（詳細內文，方便編輯）【已停用，如需啟用請移除 # 號】
     # print("\n── Step 5：產出 Word ──")
