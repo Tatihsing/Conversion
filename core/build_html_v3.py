@@ -200,14 +200,32 @@ def _sections_html(sections):
 
 
 def _action_detail_html(action_items):
+    """
+    產生詳細 Action Items HTML
+    支援兩種格式：
+    - dict: {"廠長": ["任務1", "任務2"]}  ← AI 實際輸出
+    - list of dicts: [{"owner": "廠長", "items": [...]}]  ← 備用格式
+    """
     html = ''
-    for person in action_items:
+    if not action_items:
+        return html
+
+    # 統一轉成 [(owner, [tasks])] 格式
+    if isinstance(action_items, dict):
+        pairs = [(owner, tasks) for owner, tasks in action_items.items()]
+    else:
+        # list of dicts
+        pairs = [(p.get('owner', ''), p.get('items', [])) for p in action_items if isinstance(p, dict)]
+
+    for owner, tasks in pairs:
+        if not tasks:
+            continue
         items_html = ''
-        for idx, it in enumerate(person.get('items', []), 1):
-            clean = re.sub(r'^\[.?\]\s*', '', it)
+        for idx, it in enumerate(tasks, 1):
+            clean = re.sub(r'^\[.?\]\s*', '', str(it))
             items_html += f'<li><span class="ai-num">{idx}</span>{esc(clean)}</li>'
         html += f'''
-        <div class="ai-owner">{esc(person["owner"])}</div>
+        <div class="ai-owner">{esc(owner)}</div>
         <ol class="ai-owner-items">{items_html}</ol>'''
     return html
 
