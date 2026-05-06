@@ -2,18 +2,130 @@
 transcribe_cloud.py
 雲端語音轉文字稿：使用 Gemini API
 MP3/M4A/WAV → 繁體中文逐字稿
+
+功能：
+- 自動偵測音訊時長，超過 25 分鐘自動切段（避免 API 逾時）
+- ffmpeg 跨機器容錯：找不到時直接整段上傳（加長逾時）
+- PROCESSING 等待上限，防止無限輪詢
 """
 
+import re
 import time
+import json
+import subprocess
+import tempfile
 from pathlib import Path
 from .shared import (
-    get_key_pool, gemini_call_with_retry, load_glossary, apply_glossary,
+    get_key_pool, load_glossary, apply_glossary,
     pick_audio_file, require_api_key, MODEL_AUDIO
 )
 
+CHUNK_THRESHOLD_MIN = 25    # 超過此分鐘數才切段
+CHUNK_SIZE_MIN      = 20    # 每段長度（分鐘）
+PROCESSING_TIMEOUT  = 300   # PROCESSING 等待上限（秒）
+API_TIMEOUT_SHORT   = 900   # < 25 分鐘音訊的 API 逾時（秒）
+API_TIMEOUT_CHUNK   = 720   # 每段的 API 逾時（秒）
 
-def transcribe_audio(mp3_path: Path, glossary: dict, max_retries: int = 10) -> str:
-    """上傳音訊到 Gemini API 進行轉錄（file 和 API call 綁定同一個 Key）"""
+
+# ── ffmpeg 定位（跨機器容錯）────────────────────────────────────────────────
+
+def _find_ffmpeg() -> tuple:
+    """
+    嘗試定位 ffmpeg / ffprobe 執行檔
+    搜尋順序：
+    1. 系統 PATH（最常見）
+    2. Windows 常見安裝路徑
+    3. 本專案 tools/ 目錄（可放入 portable 版）
+    回傳：(ffmpeg_path, ffprobe_path) 或 (None, None)
+    """
+    import shutil
+    import sys
+
+    # 1. PATH
+    ff  = shutil.which('ffmpeg')
+    ffp = shutil.which('ffprobe')
+    if ff and ffp:
+        return ff, ffp
+
+    # 2. Windows 常見安裝路徑
+    win_paths = [
+        r'C:\ffmpeg\bin',
+        r'C:\Program Files\ffmpeg\bin',
+        r'C:\Program Files (x86)\ffmpeg\bin',
+    ]
+    for d in win_paths:
+        ff_candidate  = Path(d) / 'ffmpeg.exe'
+        ffp_candidate = Path(d) / 'ffprobe.exe'
+        if ff_candidate.exists() and ffp_candidate.exists():
+            return str(ff_candidate), str(ffp_candidate)
+
+    # 3. 本專案 tools/ 目錄（使用者可自行放 portable ffmpeg）
+    project_root = Path(__file__).parent.parent
+    tools_ff  = project_root / 'tools' / 'ffmpeg.exe'
+    tools_ffp = project_root / 'tools' / 'ffprobe.exe'
+    if tools_ff.exists() and tools_ffp.exists():
+        return str(tools_ff), str(tools_ffp)
+
+    return None, None
+
+
+_FFMPEG, _FFPROBE = _find_ffmpeg()
+
+if _FFMPEG:
+    print(f"[INFO] ffmpeg 已就緒：{_FFMPEG}")
+else:
+    print("[WARN] 找不到 ffmpeg，長音訊（>25分鐘）將直接整段上傳（逾時風險較高）")
+
+
+# ── 音訊工具函式 ────────────────────────────────────────────────────────────
+
+def get_audio_duration(path: Path) -> float:
+    """用 ffprobe 取得音訊時長（秒），找不到 ffprobe 時回傳 0"""
+    if not _FFPROBE:
+        return 0.0
+    cmd = [_FFPROBE, '-v', 'quiet', '-print_format', 'json', '-show_format', str(path)]
+    try:
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=30)
+        info = json.loads(out)
+        return float(info['format'].get('duration', 0))
+    except Exception:
+        return 0.0
+
+
+def split_audio_chunks(src: Path, chunk_sec: int, tmp_dir: Path) -> list:
+    """
+    用 ffmpeg 將音訊切成指定長度的段落
+    回傳：list of Path，若 ffmpeg 不可用則回傳空 list
+    """
+    if not _FFMPEG:
+        return []
+
+    pattern = str(tmp_dir / 'chunk_%03d') + src.suffix
+    cmd = [
+        _FFMPEG, '-y', '-i', str(src),
+        '-f', 'segment',
+        '-segment_time', str(chunk_sec),
+        '-reset_timestamps', '1',
+        '-c', 'copy',
+        pattern
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        print("[WARN] ffmpeg 切割逾時，退回整段模式")
+        return []
+    except subprocess.CalledProcessError as e:
+        print(f"[WARN] ffmpeg 切割失敗：{e.stderr.decode(errors='replace')[:200]}，退回整段模式")
+        return []
+
+    return sorted(tmp_dir.glob(f'chunk_*{src.suffix}'))
+
+
+# ── 核心轉錄函式 ────────────────────────────────────────────────────────────
+
+def _transcribe_single(mp3_path: Path, glossary: dict, max_retries: int = 10,
+                       api_timeout: int = API_TIMEOUT_SHORT) -> str:
+    """單段轉錄（內部使用）"""
     import google.generativeai as genai
     import google.api_core.exceptions as gex
 
@@ -32,19 +144,24 @@ def transcribe_audio(mp3_path: Path, glossary: dict, max_retries: int = 10) -> s
     )
 
     audio_file = None
+    processing_start = None
 
     for attempt in range(max_retries):
         try:
-            # ── 每次嘗試都用目前的 Key 重新設定 + 上傳 ──
             genai.configure(api_key=pool.current)
 
             if not audio_file:
-                print(f"[UP]  上傳音訊（{mp3_path.stat().st_size/1024/1024:.1f} MB）"
-                      f"（Key {pool.index + 1}）...")
+                size_mb = mp3_path.stat().st_size / 1024 / 1024
+                print(f"[UP]  上傳音訊（{size_mb:.1f} MB）（Key {pool.index + 1}）...")
                 audio_file = genai.upload_file(str(mp3_path), mime_type=mime)
 
                 print("[..] 等待處理", end="", flush=True)
+                processing_start = time.time()
                 while audio_file.state.name == "PROCESSING":
+                    if time.time() - processing_start > PROCESSING_TIMEOUT:
+                        raise RuntimeError(
+                            f"PROCESSING 等待逾時（>{PROCESSING_TIMEOUT}秒），將重試"
+                        )
                     time.sleep(3)
                     audio_file = genai.get_file(audio_file.name)
                     print(".", end="", flush=True)
@@ -54,32 +171,25 @@ def transcribe_audio(mp3_path: Path, glossary: dict, max_retries: int = 10) -> s
                     raise RuntimeError(f"音訊處理失敗：{audio_file.state.name}")
 
             print("[MIC] 轉錄中...")
-            
-            # 動態溫度：從 0.4 起步，避免 0.0~0.2 容易引發的無限迴圈當機
             current_temp = min(0.4 + (attempt * 0.2), 1.0)
             client = genai.GenerativeModel(MODEL_AUDIO, generation_config={"temperature": current_temp})
-            
-            resp = client.generate_content([prompt_text, audio_file], request_options={"timeout": 600})
-            
-            # 嘗試取得文字
+            resp = client.generate_content([prompt_text, audio_file], request_options={"timeout": api_timeout})
+
             try:
                 transcript = resp.text
             except ValueError as e:
                 if "quick accessor" in str(e):
-                    raise ValueError(f"Gemini 回傳異常空白 (Finish Reason 1)，將提高溫度重試 ({e})")
+                    raise ValueError(f"Gemini 回傳異常空白，將提高溫度重試（{e}）")
                 raise
 
             if not transcript or not transcript.strip():
                 raise ValueError("Gemini 回傳空回應")
-                
-            # 偵測「無限迴圈幻覺」：如果某句超過 20 字的話重複出現超過 5 次，代表 AI 卡死了
-            import re
-            # 找尋長度大於 20 的重複片段
-            loop_match = re.search(r'(.{20,})\1{4,}', transcript)
-            if loop_match or "the last time we talked about" in transcript.lower():
-                raise ValueError("偵測到 AI 陷入無限重複的文字迴圈幻覺")
 
-            # 成功，刪除上傳的檔案
+            # 偵測無限迴圈幻覺
+            if re.search(r'(.{20,})\1{4,}', transcript):
+                raise ValueError("偵測到 AI 陷入無限重複文字迴圈")
+
+            # 清除上傳的檔案
             try:
                 genai.delete_file(audio_file.name)
             except Exception:
@@ -94,7 +204,6 @@ def transcribe_audio(mp3_path: Path, glossary: dict, max_retries: int = 10) -> s
             return transcript
 
         except gex.ResourceExhausted as e:
-            # 遇到限流：先刪除舊 Key 上傳的檔案，再切換 Key
             exhausted_keys.add(pool.index)
             if audio_file:
                 try:
@@ -104,19 +213,16 @@ def transcribe_audio(mp3_path: Path, glossary: dict, max_retries: int = 10) -> s
                     pass
                 audio_file = None
 
-            # 找下一個未限流的 Key
             switched = False
             while pool.next_key():
                 if pool.index not in exhausted_keys:
-                     print(f"[>>] 切換到第 {pool.index+1} 組 Key，重新上傳音訊...")
-                     switched = True
-                     break
+                    print(f"[>>] 切換到第 {pool.index+1} 組 Key，重新上傳音訊...")
+                    switched = True
+                    break
 
             if not switched:
-                # 所有 Key 都限流，等待後重置
-                import re as _re
                 wait = 60
-                m = _re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', str(e))
+                m = re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', str(e))
                 if m:
                     wait = int(m.group(1)) + 5
                 pool.reset()
@@ -127,15 +233,15 @@ def transcribe_audio(mp3_path: Path, glossary: dict, max_retries: int = 10) -> s
                     time.sleep(min(5, i))
                 print()
 
-        except gex.DeadlineExceeded as e:
+        except gex.DeadlineExceeded:
             wait = min(30 * (attempt + 1), 120)
-            print(f"[WARN] 請求逾時（檔案較大，第 {attempt+1} 次），等待 {wait} 秒後重試...")
+            print(f"[WARN] 請求逾時（第 {attempt+1} 次），等待 {wait} 秒後重試...")
             if attempt < max_retries - 1:
                 time.sleep(wait)
             else:
                 raise
 
-        except (gex.ServiceUnavailable, gex.InternalServerError) as e:
+        except (gex.ServiceUnavailable, gex.InternalServerError):
             wait = min(30 * (attempt + 1), 120)
             print(f"[WARN] 伺服器繁忙（第 {attempt+1} 次），等待 {wait} 秒後重試...")
             if attempt < max_retries - 1:
@@ -159,6 +265,66 @@ def transcribe_audio(mp3_path: Path, glossary: dict, max_retries: int = 10) -> s
     raise RuntimeError(f"轉錄失敗，已重試 {max_retries} 次")
 
 
+def _transcribe_chunked(mp3_path: Path, glossary: dict, max_retries: int) -> str:
+    """切段轉錄：分段轉錄後合併"""
+    chunk_sec = CHUNK_SIZE_MIN * 60
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        print(f"[CHUNK] 分割音訊中...")
+        chunks = split_audio_chunks(mp3_path, chunk_sec, tmp_dir)
+
+        if not chunks:
+            # ffmpeg 切割失敗，退回整段模式（加長逾時）
+            print("[WARN] 退回整段模式（逾時上限延長至 1800 秒）")
+            return _transcribe_single(mp3_path, glossary, max_retries, api_timeout=1800)
+
+        print(f"[CHUNK] 共 {len(chunks)} 段")
+        parts = []
+        for i, chunk in enumerate(chunks):
+            print(f"\n[CHUNK] 轉錄第 {i+1}/{len(chunks)} 段（{chunk.name}）")
+            part = _transcribe_single(chunk, {}, max_retries, api_timeout=API_TIMEOUT_CHUNK)
+            parts.append(f"--- 第 {i+1} 段 ---\n{part}")
+
+    full = "\n\n".join(parts)
+
+    if glossary:
+        full = apply_glossary(full, glossary)
+        print(f"[OK] 套用對照表 {len(glossary)} 條")
+
+    print(f"[OK] 分段轉錄合併完成（{len(full):,} 字）")
+    return full
+
+
+# ── 主要對外接口 ────────────────────────────────────────────────────────────
+
+def transcribe_audio(mp3_path: Path, glossary: dict, max_retries: int = 10) -> str:
+    """
+    音訊 → 逐字稿（對外唯一接口）
+    - 若 ffmpeg 可用且音訊 > CHUNK_THRESHOLD_MIN 分鐘：自動切段轉錄
+    - 若 ffmpeg 不可用：直接整段上傳（加長逾時）
+    - 若 ffmpeg 切割失敗：自動退回整段模式
+    """
+    duration = get_audio_duration(mp3_path)
+    duration_min = duration / 60
+
+    if duration > 0:
+        print(f"[INFO] 音訊時長：{duration_min:.1f} 分鐘")
+    else:
+        print(f"[INFO] 無法偵測音訊時長（ffprobe 不可用），直接上傳")
+
+    if _FFMPEG and duration_min > CHUNK_THRESHOLD_MIN:
+        print(f"[CHUNK] 音訊 > {CHUNK_THRESHOLD_MIN} 分鐘，自動切成 {CHUNK_SIZE_MIN} 分鐘段落分批轉錄")
+        return _transcribe_chunked(mp3_path, glossary, max_retries)
+    elif not _FFMPEG and duration_min > CHUNK_THRESHOLD_MIN:
+        print(f"[WARN] ffmpeg 不可用，長音訊將直接整段上傳（逾時上限 1800 秒）")
+        print(f"[TIP]  若要啟用自動切段，請安裝 ffmpeg 並加入 PATH，或放入 tools/ 目錄")
+        return _transcribe_single(mp3_path, glossary, max_retries, api_timeout=1800)
+    else:
+        return _transcribe_single(mp3_path, glossary, max_retries, api_timeout=API_TIMEOUT_SHORT)
+
+
+# ── 獨立執行入口 ────────────────────────────────────────────────────────────
 
 def run():
     """純轉逐字稿主流程"""
@@ -182,7 +348,6 @@ def run():
         return
 
     print(f"[OK] 已選擇：{input_file}")
-
     print("\n── 執行語音轉文字 ──")
     transcript = transcribe_audio(input_file, glossary)
     txt_path = input_file.parent / (input_file.stem + "_逐字稿.txt")
