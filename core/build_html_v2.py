@@ -98,7 +98,7 @@ body{font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;background:#f0f0
 /* ══ 組件 I：Action Items 執行清單 ══ */
 .ai-section{border-radius:8px;overflow:hidden;border:1px solid #C8E6C9;page-break-inside:avoid;break-inside:avoid;margin-bottom:10px;}
 .ai-header{background:#1B5E20;color:#fff;font-size:12.5px;font-weight:600;padding:9px 16px;display:flex;align-items:center;gap:7px;}
-.ai-header::before{content:'\\2756';font-size:10px;opacity:.7;}
+.ai-header::before{content:'\2756';font-size:10px;opacity:.7;}
 .ai-body{display:block;}
 .ai-group{padding:10px 14px;background:#fff;border-right:1px solid #E8F5E9;min-width:0;}
 .ai-group:last-child{border-right:none;}
