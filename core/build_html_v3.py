@@ -49,7 +49,9 @@ def _solution_html(s):
 
 
 def _themes_html(themes):
-    """瀑布流分欄：依主題數決定欄數"""
+    """瀑布流分欄：依主題數決定欄數
+    支援 sub_heading（子標題）和 numbered_points（編號步驟）
+    """
     n = len(themes)
     if n == 0:
         return '', 0
@@ -60,18 +62,34 @@ def _themes_html(themes):
     else:
         cols = 3
 
-    # 瀑布流分配：依各欄權重（點數）平均分配
     columns = [{'html': '', 'weight': 0} for _ in range(cols)]
     for th in themes:
-        pts = ''.join(f'<li>{esc(p)}</li>' for p in th.get('points', []))
+        sub_h = th.get('sub_heading', '') or ''
+        points = th.get('points', [])
+        numbered = [p for p in (th.get('numbered_points', []) or []) if p]
+
+        sub_html = f'<div class="theme-sub-heading">{esc(sub_h)}</div>' if sub_h else ''
+
+        pts_html = ''.join(f'<li>{esc(p)}</li>' for p in points)
+        body_html = f'<ul class="card-body">{pts_html}</ul>' if pts_html else ''
+
+        num_items = ''.join(
+            f'<div class="theme-num-item"><span class="theme-num">{i+1}</span>{esc(p)}</div>'
+            for i, p in enumerate(numbered)
+        )
+        num_html = f'<div class="theme-num-list">{num_items}</div>' if num_items else ''
+
         card = f'''
         <div class="card card-soft">
           <div class="theme-title">{esc(th["title"])}</div>
-          <ul class="card-body">{pts}</ul>
+          {sub_html}
+          {body_html}
+          {num_html}
         </div>'''
+        weight = len(points) + len(numbered) * 1.2 + (1 if sub_h else 0)
         lightest = min(columns, key=lambda c: c['weight'])
         lightest['html'] += card
-        lightest['weight'] += len(th.get('points', []))
+        lightest['weight'] += weight
 
     cols_html = ''.join(f'<div class="masonry-col">{c["html"]}</div>' for c in columns)
     return cols_html, cols
@@ -246,7 +264,12 @@ body{font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;background:#f0f0
 /* ── Row 2：主題瀑布流 ── */
 .row2{display:grid;gap:10px;margin-bottom:10px;align-items:start;}
 .masonry-col{display:flex;flex-direction:column;gap:10px;}
-.theme-title{font-size:12px;font-weight:700;color:#2E7D32;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #C8E6C9;}
+.theme-title{font-size:12px;font-weight:700;color:#2E7D32;margin-bottom:6px;padding-bottom:5px;border-bottom:2px solid #C8E6C9;}
+.theme-sub-heading{font-size:11.5px;font-weight:700;color:#1B5E20;margin:5px 0 6px;padding:3px 8px;background:#E8F5E9;border-radius:4px;}
+.theme-num-list{margin-top:6px;}
+.theme-num-item{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#333;padding:3px 0;border-bottom:1px dotted #E0E0E0;line-height:1.5;}
+.theme-num-item:last-child{border-bottom:none;}
+.theme-num{min-width:18px;height:18px;background:#43A047;color:#fff;border-radius:50%;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}
 
 /* ── 人員職責卡 ── */
 .role-section{margin-bottom:10px;}
