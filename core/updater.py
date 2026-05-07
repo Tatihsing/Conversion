@@ -8,6 +8,10 @@ core/updater.py
 import subprocess
 import json
 import urllib.request
+import zipfile
+import shutil
+import tempfile
+import os
 from pathlib import Path
 
 # ── GitHub 倉庫設定 ──────────────────────────────────────────────────────
@@ -70,6 +74,50 @@ def _do_git_pull() -> bool:
         return False
 
 
+def _do_zip_update() -> bool:
+    """無 git 環境下，下載 ZIP 並覆蓋更新 core 資料夾"""
+    zip_url = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/archive/refs/heads/{GITHUB_BRANCH}.zip"
+    zip_path = ROOT / "update.zip"
+    try:
+        print("[INFO] 正在下載最新版本，請稍候...")
+        urllib.request.urlretrieve(zip_url, zip_path)
+        print("[INFO] 下載完成，正在套用更新...")
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+            
+            # GitHub 壓縮檔解開後會有一個根目錄 (例如 Conversion-main)
+            extracted_folder = os.path.join(temp_dir, f"{GITHUB_REPO}-{GITHUB_BRANCH}")
+            source_core = os.path.join(extracted_folder, "core")
+            target_core = ROOT / "core"
+            
+            if os.path.exists(source_core):
+                # 覆蓋 core 資料夾
+                shutil.copytree(source_core, target_core, dirs_exist_ok=True)
+                
+                # 順便更新外層腳本
+                for file_name in ["start.bat", "啟動.bat", "README.md"]:
+                    src_file = os.path.join(extracted_folder, file_name)
+                    if os.path.exists(src_file):
+                        shutil.copy2(src_file, ROOT / file_name)
+                        
+                print("[OK] 自動更新成功！請關閉並「重新啟動程式」以套用新版功能。")
+                return True
+            else:
+                print("[ERR] 更新失敗：無法在下載的檔案中找到 core 資料夾。")
+                return False
+    except Exception as e:
+        print(f"[ERR] ZIP 自動更新失敗：{e}")
+        return False
+    finally:
+        if zip_path.exists():
+            try:
+                os.remove(zip_path)
+            except Exception:
+                pass
+
+
 def check_for_updates(auto_update: bool = False, silent: bool = False) -> bool:
     """
     比對本機與遠端版本，有新版本時提示或自動更新
@@ -108,25 +156,25 @@ def check_for_updates(auto_update: bool = False, silent: bool = False) -> bool:
 
     if auto_update:
         print("[AUTO] 自動更新中...")
-        _do_git_pull()
-        return False
-
-    if _has_git():
-        print("  輸入 Y 立即更新（git pull），或按 Enter 略過：", end="", flush=True)
-        try:
-            ans = input().strip().lower()
-        except Exception:
-            ans = ""
-        if ans == "y":
+        if _has_git():
             _do_git_pull()
         else:
-            download_url = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/archive/refs/heads/{GITHUB_BRANCH}.zip"
-            print(f"[INFO] 已略過自動更新，可手動執行：git pull")
-            print(f"[INFO] 或下載最新版：{download_url}")
+            _do_zip_update()
+        return False
+
+    print("  輸入 Y 立即自動更新，或按 Enter 略過：", end="", flush=True)
+    try:
+        ans = input().strip().lower()
+    except Exception:
+        ans = ""
+        
+    if ans == "y":
+        if _has_git():
+            _do_git_pull()
+        else:
+            _do_zip_update()
     else:
-        download_url = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/archive/refs/heads/{GITHUB_BRANCH}.zip"
-        print(f"[WARN] 未偵測到 git，請手動下載最新版覆蓋：")
-        print(f"  {download_url}")
+        print(f"[INFO] 已略過更新。")
 
     return False
 
