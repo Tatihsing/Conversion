@@ -74,8 +74,26 @@ def _do_git_pull() -> bool:
         return False
 
 
+def _cleanup_old_updates():
+    """清除之前更新留下的舊資料夾或備份檔"""
+    import shutil
+    try:
+        for item in ROOT.iterdir():
+            name = item.name
+            if name.startswith("core_old_") or name.endswith(".old"):
+                if item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
+                else:
+                    try:
+                        os.remove(item)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+
 def _do_zip_update() -> bool:
-    """無 git 環境下，下載 ZIP 並覆蓋更新 core 資料夾"""
+    """無 git 環境下，下載 ZIP 並使用目錄重命名法（藍綠部署）來避開檔案鎖定"""
     zip_url = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/archive/refs/heads/{GITHUB_BRANCH}.zip"
     zip_path = ROOT / "update.zip"
     try:
@@ -87,20 +105,35 @@ def _do_zip_update() -> bool:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(temp_dir)
             
-            # GitHub 壓縮檔解開後會有一個根目錄 (例如 Conversion-main)
             extracted_folder = os.path.join(temp_dir, f"{GITHUB_REPO}-{GITHUB_BRANCH}")
             source_core = os.path.join(extracted_folder, "core")
             target_core = ROOT / "core"
             
             if os.path.exists(source_core):
-                # 覆蓋 core 資料夾
-                shutil.copytree(source_core, target_core, dirs_exist_ok=True)
+                # 利用「重新命名」避開 Windows 檔案被使用中無法覆寫的限制
+                import time
+                if target_core.exists():
+                    old_core = ROOT / f"core_old_{int(time.time())}"
+                    try:
+                        os.rename(target_core, old_core)
+                    except Exception as e:
+                        print(f"[ERR] 無法替換舊版核心資料夾：{e}")
+                        return False
                 
-                # 順便更新外層腳本
+                # 將新版資料夾移動過來
+                shutil.move(source_core, target_core)
+                
+                # 順便更新外層腳本（先重命名舊的，再搬新的）
                 for file_name in ["start.bat", "啟動.bat", "README.md"]:
                     src_file = os.path.join(extracted_folder, file_name)
                     if os.path.exists(src_file):
-                        shutil.copy2(src_file, ROOT / file_name)
+                        dst_file = ROOT / file_name
+                        if dst_file.exists():
+                            try:
+                                os.rename(dst_file, ROOT / f"{file_name}.old")
+                            except Exception:
+                                pass
+                        shutil.copy2(src_file, dst_file)
                         
                 print("[OK] 自動更新成功！請關閉並「重新啟動程式」以套用新版功能。")
                 return True
@@ -129,6 +162,8 @@ def check_for_updates(auto_update: bool = False, silent: bool = False) -> bool:
     Returns:
         True = 已是最新 / False = 有更新但未更新
     """
+    # 執行更新前先清理舊的備份
+    _cleanup_old_updates()
     # 若 GitHub 設定未填，直接略過
     if GITHUB_OWNER == "your-org":
         return True

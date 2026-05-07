@@ -45,12 +45,12 @@ AIzaSyYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY
 
 ## 功能說明
 
-| 功能 | 說明 | 需要 API Key | 需要網路 |
-|------|------|:---:|:---:|
-| **[1] 全自動會議記錄** | 錄音或逐字稿 → PDF 會議摘要 + 自動上傳 Google Drive | ✅ | ✅ |
-| **[2] 純轉逐字稿** | 錄音 → 繁體中文文字稿（雲端 Gemini） | ✅ | ✅ |
-| **[3] 離線轉逐字稿** | 錄音 → 文字稿（本機 faster-whisper，不需網路） | ❌ | ❌ |
-| **[4] 產生 SRT 字幕** | 影音 → SRT 字幕檔（本機 faster-whisper） | ❌ | ❌ |
+| 功能                   | 說明                                                | 需要 API Key | 需要網路 |
+| ---------------------- | --------------------------------------------------- | :----------: | :------: |
+| **[1] 全自動會議記錄** | 錄音或逐字稿 → PDF 會議摘要 + 自動上傳 Google Drive |      ✅      |    ✅    |
+| **[2] 純轉逐字稿**     | 錄音 → 繁體中文文字稿（雲端 Gemini）                |      ✅      |    ✅    |
+| **[3] 離線轉逐字稿**   | 錄音 → 文字稿（本機 faster-whisper，不需網路）      |      ❌      |    ❌    |
+| **[4] 產生 SRT 字幕**  | 影音 → SRT 字幕檔（本機 faster-whisper）            |      ❌      |    ❌    |
 
 ### 功能 [1] 產出檔案
 
@@ -82,42 +82,43 @@ AIzaSyYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY
 ## 資料夾結構
 
 meeting-auto/
-├── 啟動.bat          ← ★ 唯一入口，雙擊即用
-├── api_keys.txt      ← Gemini API Key（支援多組，會自動剔除失效 Key）
-├── credentials.json  ← Google Drive 授權設定檔（需至 GCP 下載）
-├── token.json        ← 自動產生的 Google 授權憑證（請勿外流！）
-├── glossary.xlsx     ← 語音辨識修正對照表
-├── README.md         ← 本說明文件
-├── core/             ← 程式碼（不需動）
-├── tools/            ← 外部依賴工具（如 ffmpeg，會自動下載）
-└── python/           ← Python 環境（首次自動下載）
+├── 啟動.bat ← ★ 唯一入口，雙擊即用
+├── api_keys.txt ← Gemini API Key（支援多組，會自動剔除失效 Key）
+├── credentials.json ← Google Drive 授權設定檔（需至 GCP 下載）
+├── token.json ← 自動產生的 Google 授權憑證（請勿外流！）
+├── glossary.xlsx ← 語音辨識修正對照表
+├── README.md ← 本說明文件
+├── core/ ← 程式碼（不需動）
+├── tools/ ← 外部依賴工具（如 ffmpeg，會自動下載）
+└── python/ ← Python 環境（首次自動下載）
+
 ```
 
 ---
 
 ## 常見問題
 
-**Q：首次啟動失敗？**  
+**Q：首次啟動失敗？**
 A：確認有網路連線，Windows 10 以上版本。
 
-**Q：出現 API Key 錯誤？**  
+**Q：出現 API Key 錯誤？**
 A：用記事本編輯 `api_keys.txt`，確認 Key 正確且無多餘空格。
 
-**Q：HTML 產出了但沒有 PDF？**  
+**Q：HTML 產出了但沒有 PDF？**
 A：用 Chrome 開啟 HTML 檔案，按 Ctrl+P，印表機選「另存為 PDF」。
 
-**Q：轉錄品質不佳？**  
+**Q：轉錄品質不佳？**
 A：在 `glossary.xlsx` 補充對照表，下次自動修正。
 
-**Q：模型找不到（404 錯誤）？**  
-A：編輯 `core/shared.py`，將 MODEL_AUDIO / MODEL_TEXT 改為最新版本。  
+**Q：模型找不到（404 錯誤）？**
+A：編輯 `core/shared.py`，將 MODEL_AUDIO / MODEL_TEXT 改為最新版本。
 可至 https://ai.google.dev/gemini-api/docs/models 查詢。
 
 ---
 
 ## 費用說明
 
-- Gemini API 免費額度：每天 1,500 次請求
+- Gemini API 免費額度：每天 20 次請求
 - 多組 Key 輪換，正常使用完全免費
 - 功能 [3]、[4] 使用本地模型，完全免費
 
@@ -134,3 +135,4 @@ A：編輯 `core/shared.py`，將 MODEL_AUDIO / MODEL_TEXT 改為最新版本。
 - **API Key 自動輪換與淘汰**：若偵測到 Gemini API Key 限流，會無縫切換下一組；若偵測到 Key **已過期或外洩 (403 Leaked)**，會直接將其從記憶體中永久剔除並重試，徹底防止程式崩潰。
 - **100% 可攜帶環境**：新增免 Git 的 ZIP 自動更新機制。若偵測到缺少 `ffmpeg` 等底層工具，也會自動從 GitHub 下載免安裝版，確保將資料夾丟到任何一台空機上都能一鍵運行。
 - **原生中文介面**：全面棄用 .NET WPF 舊版檔案選擇器，改用純 Python `ctypes` 呼叫 Windows 底層原生 API，確保在各種環境下都能完美渲染出與系統語言 (繁體中文) 完全一致的現代化選擇視窗。
+```
