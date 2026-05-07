@@ -167,8 +167,12 @@ def pick_file(title="選擇檔案", filetypes=None):
 
         ofn = OPENFILENAME()
         ofn.lStructSize = ctypes.sizeof(OPENFILENAME)
-        ofn.lpstrFile = ctypes.create_unicode_buffer(1024)
+        
+        # 必須保留 buffer 的參考，並轉換為指標
+        buffer = ctypes.create_unicode_buffer(1024)
+        ofn.lpstrFile = ctypes.cast(buffer, wintypes.LPWSTR)
         ofn.nMaxFile = 1024
+        
         ofn.lpstrTitle = title
         ofn.lpstrFilter = filter_str
         # OFN_EXPLORER = 0x00080000 (使用現代化視窗), OFN_FILEMUSTEXIST = 0x00001000
@@ -177,7 +181,7 @@ def pick_file(title="選擇檔案", filetypes=None):
         try:
             # 必須使用 comdlg32.dll
             if ctypes.windll.comdlg32.GetOpenFileNameW(ctypes.byref(ofn)):
-                path = ofn.lpstrFile.value
+                path = buffer.value
                 return Path(path) if path else None
         except Exception as e:
             print(f"[WARN] 底層視窗呼叫失敗：{e}")
