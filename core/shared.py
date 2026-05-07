@@ -140,6 +140,8 @@ def pick_file(title="選擇檔案", filetypes=None):
 
         ps_script = f"""
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::GetCultureInfo('zh-TW')
+        [System.Threading.Thread]::CurrentThread.CurrentUICulture = [System.Globalization.CultureInfo]::GetCultureInfo('zh-TW')
         Add-Type -AssemblyName PresentationFramework
         $f = New-Object Microsoft.Win32.OpenFileDialog
         $f.Title = '{title}'
