@@ -97,16 +97,21 @@ def main():
     # 安裝基本套件
     ensure_base_packages()
 
-    # 啟動時檢查更新（靜默模式，若無新版不印東西；有新版才提示）
-    from core.updater import check_for_updates
-    check_for_updates(silent=True)
+    # 取得版號並印出
+    from core.updater import get_version_string, check_for_updates
+    version = get_version_string()
+    print(f"\n[INFO] 會議記錄工具箱 {version}")
+
+    # 啟動時檢查更新（取消靜默，讓使用者知道有在檢查）
+    print("[INFO] 檢查最新版本中...", end=" ", flush=True)
+    check_for_updates(silent=False)
+    print()
 
     # 如果有傳入檔案路徑（拖曳檔案到 .bat 上），依檔案類型決定動作
     if len(sys.argv) > 1:
         file_path = sys.argv[1]
         if not os.path.isfile(file_path):
             print(f"  [ERR] 找不到檔案：{file_path}")
-            input("\n按 Enter 關閉...")
             return
 
         ext = os.path.splitext(file_path)[1].lower()
@@ -131,7 +136,6 @@ def main():
             print(f"    音訊/逐字稿：.mp3 .m4a .wav .aac .flac .txt")
             print(f"    資料檔：    .json（_data.json）")
 
-        input("\n按 Enter 關閉...")
         return
 
     # 正常模式：直接執行全自動會議記錄 (傻瓜化設計)
