@@ -73,6 +73,19 @@ class KeyPool:
         print(f"[>>] 切換到第 {self.index + 1} 組 API Key")
         return True
 
+    def remove_current_key(self):
+        """當 Key 被標記為外洩或無效時，將其從可用清單中永久移除"""
+        if not self.keys:
+            return False
+        print(f"[WARN] 移除無效/外洩的 API Key (第 {self.index + 1} 組)")
+        self.keys.pop(self.index)
+        if self.index >= len(self.keys):
+            self.index = 0
+        if self.keys:
+            print(f"[>>] 自動切換到下一組 API Key")
+            return True
+        return False
+
     def reset(self):
         self.index = 0
 
@@ -310,9 +323,19 @@ def gemini_call_with_retry(model, prompt, json_mode=False, max_retries=10):
                 raise
 
         except gex.GoogleAPIError as e:
-            # 其他 API 錯誤：不重試，直接拋出
-            print(f"[ERR] API 錯誤（不重試）：{e}")
-            raise
+            err_str = str(e).lower()
+            if "403" in err_str or "leaked" in err_str or "permission denied" in err_str or "api_key_invalid" in err_str:
+                print(f"[ERR] API Key 權限錯誤或已外洩：{e}")
+                if pool.remove_current_key():
+                    exhausted_keys.clear()  # 重新計算限流
+                    continue  # 立即使用下一把 Key 重試
+                else:
+                    print("[ERR] 所有可用的 API Key 均已失效，請更新 api_keys.txt")
+                    raise
+            else:
+                # 其他 API 錯誤：不重試，直接拋出
+                print(f"[ERR] API 錯誤（不重試）：{e}")
+                raise
 
 
 
