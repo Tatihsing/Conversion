@@ -19,46 +19,28 @@ GITHUB_BRANCH = "main"
 ROOT = Path(__file__).parent.parent   # 專案根目錄
 
 
-def _get_local_commit() -> str:
-    """取得本機最新 commit hash（前 7 碼）"""
-    # 方法 1：git 指令（最準確）
+def _get_local_version() -> str:
+    """讀取本機的 version.txt"""
+    version_file = ROOT / "core" / "version.txt"
     try:
-        result = subprocess.check_output(
-            ["git", "rev-parse", "--short=7", "HEAD"],
-            cwd=ROOT, capture_output=True, text=True, timeout=5
-        )
-        return result.stdout.strip()
+        if version_file.exists():
+            return version_file.read_text(encoding='utf-8').strip()
     except Exception:
         pass
+    return "0.0.0"
 
-    # 方法 2：直接讀 .git/refs（無 git 指令時）
+
+def _get_remote_version() -> str:
+    """透過 GitHub Raw 取得遠端最新的 version.txt"""
+    url = f"https://raw.githubusercontent.com/{GITHUB_OWNER}/{GITHUB_REPO}/{GITHUB_BRANCH}/core/version.txt"
     try:
-        ref_file = ROOT / ".git" / "refs" / "heads" / GITHUB_BRANCH
-        if ref_file.exists():
-            return ref_file.read_text().strip()[:7]
-    except Exception:
-        pass
-
-    return ""
-
-
-def _get_remote_commit() -> str:
-    """透過 GitHub API 取得遠端最新 commit hash（失敗一律靜默略過）"""
-    url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/commits/{GITHUB_BRANCH}"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "meeting-auto-updater"})
+        req = urllib.request.Request(url, headers={"User-Agent": "meeting-auto-updater", "Cache-Control": "no-cache"})
         with urllib.request.urlopen(req, timeout=5) as resp:
-            if resp.status != 200:
-                return ""
-            data = json.loads(resp.read())
-            return data["sha"][:7]
-    except urllib.error.HTTPError as e:
-        if e.code in (401, 403, 404):
-            # 私有倉庫或尚未建立，靜默略過
-            return ""
-        return ""
+            if resp.status == 200:
+                return resp.read().decode('utf-8').strip()
     except Exception:
-        return ""
+        pass
+    return ""
 
 
 def _has_git() -> bool:
@@ -103,24 +85,25 @@ def check_for_updates(auto_update: bool = False, silent: bool = False) -> bool:
     if GITHUB_OWNER == "your-org":
         return True
 
-    local  = _get_local_commit()
-    remote = _get_remote_commit()
+    local  = _get_local_version()
+    remote = _get_remote_version()
 
-    if not local or not remote:
+    if not remote:
         if not silent:
-            print("[INFO] 無法比對版本（無網路或 git 不可用），略過版本檢查")
+            print("[INFO] 無法連線至 GitHub 取得最新版本資訊")
         return True
 
-    if local == remote[:7]:
+    # 簡單的版本字串比對（例如 "2.1.0" == "2.1.0"）
+    if local == remote:
         if not silent:
-            print(f"[OK] 目前版本已是最新（{local}）")
+            print(f"[OK] 目前版本已是最新（v{local}）")
         return True
 
     # 有新版本
     print(f"\n{'='*50}")
     print(f"  🔔 發現新版本！")
-    print(f"  本機版本：{local}")
-    print(f"  最新版本：{remote}")
+    print(f"  目前版本：v{local}")
+    print(f"  最新版本：v{remote}")
     print(f"{'='*50}")
 
     if auto_update:
@@ -142,7 +125,7 @@ def check_for_updates(auto_update: bool = False, silent: bool = False) -> bool:
             print(f"[INFO] 或下載最新版：{download_url}")
     else:
         download_url = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/archive/refs/heads/{GITHUB_BRANCH}.zip"
-        print(f"[WARN] 未偵測到 git，請手動下載最新版：")
+        print(f"[WARN] 未偵測到 git，請手動下載最新版覆蓋：")
         print(f"  {download_url}")
 
     return False
@@ -150,7 +133,4 @@ def check_for_updates(auto_update: bool = False, silent: bool = False) -> bool:
 
 def get_version_string() -> str:
     """取得版本字串，用於顯示在啟動畫面"""
-    commit = _get_local_commit()
-    if commit:
-        return f"v{commit}"
-    return "v(unknown)"
+    return f"v{_get_local_version()}"
