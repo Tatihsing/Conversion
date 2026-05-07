@@ -126,15 +126,25 @@ def pick_file(title="選擇檔案", filetypes=None):
         root.destroy()
         return Path(path) if path else None
     except ImportError:
-        # 當 tkinter 不存在時（例如嵌入式 Python），使用 PowerShell 呼叫 Windows 原生視窗
+        # 當 tkinter 不存在時（例如嵌入式 Python），使用 PowerShell 呼叫 WPF 的現代原生視窗
         import subprocess
+        
+        # 轉換 filter 格式給 WPF
+        # tkinter 格式: [("名稱", "*.ext1 *.ext2")]
+        # WPF 格式: "名稱|*.ext1;*.ext2|..."
+        ps_filters = []
+        for name, exts in filetypes:
+            ext_list = ";".join(exts.split())
+            ps_filters.append(f"{name}|{ext_list}")
+        ps_filter_str = "|".join(ps_filters)
+
         ps_script = f"""
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        Add-Type -AssemblyName System.Windows.Forms
-        $f = New-Object System.Windows.Forms.OpenFileDialog
+        Add-Type -AssemblyName PresentationFramework
+        $f = New-Object Microsoft.Win32.OpenFileDialog
         $f.Title = '{title}'
-        $f.ShowHelp = $true
-        if ($f.ShowDialog() -eq 'OK') {{ Write-Output $f.FileName }}
+        $f.Filter = '{ps_filter_str}'
+        if ($f.ShowDialog() -eq $true) {{ Write-Output $f.FileName }}
         """
         try:
             res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], 
