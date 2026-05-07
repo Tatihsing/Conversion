@@ -141,8 +141,14 @@ def check_for_updates(auto_update: bool = False, silent: bool = False) -> bool:
             print("[INFO] 無法連線至 GitHub 取得最新版本資訊")
         return True
 
-    # 簡單的版本字串比對（例如 "2.1.0" == "2.1.0"）
-    if local == remote:
+    def _parse_version(v: str) -> tuple:
+        try:
+            return tuple(map(int, v.split('.')))
+        except Exception:
+            return (0, 0, 0)
+
+    # 比較版本大小，若本機 >= 遠端，則視為最新（防止被舊版快取覆蓋降級）
+    if _parse_version(local) >= _parse_version(remote):
         if not silent:
             print(f"[OK] 目前版本已是最新（v{local}）")
         return True
