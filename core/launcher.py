@@ -30,7 +30,8 @@ def ensure_base_packages():
         "openpyxl": "openpyxl",
         "docx": "python-docx",
         "googleapiclient": "google-api-python-client",
-        "google.auth": "google-auth-httplib2 google-auth-oauthlib",
+        "google_auth_oauthlib": "google-auth-oauthlib",
+        "google_auth_httplib2": "google-auth-httplib2",
     }
     missing = []
     for module, package in packages.items():
