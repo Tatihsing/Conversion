@@ -112,6 +112,12 @@ def pick_file(title="選擇檔案", filetypes=None):
         path = filedialog.askopenfilename(title=title, filetypes=filetypes)
         root.destroy()
         return Path(path) if path else None
+    except ImportError:
+        print(f"[WARN] 系統缺少圖形介面模組，切換為手動輸入模式。")
+        path = input(f"\n{title} (請將檔案拖曳到此視窗，或貼上完整路徑)：").strip()
+        # 去除引號（拖曳時常見）
+        path = path.strip('"').strip("'")
+        return Path(path) if path else None
     except Exception as e:
         print(f"[WARN] 無法開啟選擇視窗：{e}")
         return None
