@@ -7,29 +7,63 @@ import logging
 logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
 
 def get_drive_service():
-    """取得 Google Drive API 授權物件"""
+    """取得 Google Drive API 授權物件 (OAuth 2.0)"""
     try:
-        from google.oauth2 import service_account
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google.auth.transport.requests import Request
         from googleapiclient.discovery import build
     except ImportError:
         print("[WARN] 缺少 Google API 套件，跳過上傳 (下次啟動會自動安裝)")
         return None
 
+    SCOPES = ['https://www.googleapis.com/auth/drive']
     root_dir = Path(__file__).parent.parent
-    sa_file = root_dir / "service_account.json"
-    
-    if not sa_file.exists():
-        print("[INFO] 未找到 service_account.json，跳過雲端備份。")
-        return None
+    creds_file = root_dir / "credentials.json"
+    token_file = root_dir / "token.json"
+    creds = None
+
+    # 如果有之前的授權檔 (token.json)，直接讀取
+    if token_file.exists():
+        try:
+            creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
+        except Exception:
+            pass
+
+    # 若沒有授權檔或已過期，則重新要求授權
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                print(f"[WARN] 憑證刷新失敗，需重新登入：{e}")
+                creds = None
+
+        if not creds:
+            if not creds_file.exists():
+                print("[INFO] 未找到 credentials.json，跳過雲端備份。")
+                return None
+            
+            print("\n[SETUP] 首次設定 Google Drive，將開啟瀏覽器進行授權...")
+            try:
+                flow = InstalledAppFlow.from_client_secrets_file(str(creds_file), SCOPES)
+                # 使用固定 port 避免防火牆問題，或設為 0 自動尋找
+                creds = flow.run_local_server(port=0)
+            except Exception as e:
+                print(f"[ERR] 瀏覽器授權失敗：{e}")
+                return None
+
+        # 將成功的授權存下來，以後就不必再登入了
+        try:
+            token_file.write_text(creds.to_json())
+        except Exception as e:
+            print(f"[WARN] 無法儲存 token.json：{e}")
 
     try:
-        creds = service_account.Credentials.from_service_account_file(
-            str(sa_file), scopes=['https://www.googleapis.com/auth/drive']
-        )
         service = build('drive', 'v3', credentials=creds)
         return service
     except Exception as e:
-        print(f"[ERR] Google Drive 授權失敗：{e}")
+        print(f"[ERR] Google Drive 建立服務失敗：{e}")
         return None
 
 def find_or_create_folder(service, folder_name, parent_id):
