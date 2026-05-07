@@ -17,7 +17,7 @@ from .shared import (
 )
 from .transcribe_cloud import transcribe_audio
 from .build_html_v3 import build_html_v3   # v3 程式碼控制排版（主要引擎）
-from .build_html import build_html           # v1 保留作為備用
+from .legacy.build_html import build_html  # v1 已移至 legacy 作為備用
 from .build_docx import build_docx
 from .html_to_pdf import html_to_pdf
 
@@ -341,8 +341,11 @@ def run(file_path=None):
     recording_date = get_recording_date(input_file)
     summary, meeting = transcript_to_dicts(transcript, recording_date=recording_date)
 
-    # 取標題作為檔名
-    title = summary.get("sub_title", "會議記錄").replace("/", "_").replace("\\", "_")[:30]
+    # 取標題作為檔名與雲端資料夾名 (優先級：sub_title > big_title > 預設)
+    ai_sub = (summary.get("sub_title") or "").strip()
+    ai_big = (summary.get("big_title") or "").strip()
+    title_raw = ai_sub or ai_big or "會議記錄"
+    title = title_raw.replace("/", "_").replace("\\", "_")[:30]
     today = datetime.now().strftime("%Y-%m-%d")
     stem = f"{today}_{title}"
 
@@ -403,8 +406,18 @@ def run(file_path=None):
             audio_path=str(audio_file) if audio_file.exists() else None,
             pdf_path=str(pdf_file) if pdf_file.exists() else None,
             html_path=None, # HTML 已被刪除，不備份
-            txt_path=str(txt_file) if txt_file.exists() else None
+            txt_path=str(txt_file) if txt_file.exists() else None,
+            meeting_title=title  # 使用剛才算好的精簡標題
         )
     except Exception as e:
         print(f"[ERR] 雲端備份發生錯誤：{e}")
+
+    # Step 7：自動開啟 PDF 檔案
+    try:
+        pdf_file = output_dir / f"{stem}.pdf"
+        if pdf_file.exists():
+            import os
+            os.startfile(str(pdf_file))
+    except Exception as e:
+        print(f"[WARN] 無法自動開啟 PDF：{e}")
 

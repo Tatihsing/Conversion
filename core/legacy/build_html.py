@@ -8,7 +8,7 @@ import sys
 import re
 import json
 from datetime import datetime
-from .shared import load_glossary, apply_glossary, fix_deep
+from ..shared import load_glossary, apply_glossary, fix_deep
 
 # 強制 stdout 使用 UTF-8
 if hasattr(sys.stdout, 'reconfigure'):

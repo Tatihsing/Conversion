@@ -7,7 +7,7 @@ import sys
 import json
 import textwrap
 from datetime import datetime
-from .shared import gemini_call_with_retry, MODEL_TEXT
+from ..shared import gemini_call_with_retry, MODEL_TEXT
 
 # 強制 stdout 使用 UTF-8
 if hasattr(sys.stdout, 'reconfigure'):

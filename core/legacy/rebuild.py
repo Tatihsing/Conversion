@@ -10,10 +10,10 @@ rebuild.py
 
 import json
 from pathlib import Path
-from .shared import pick_file, load_glossary, fix_deep
+from ..shared import pick_file, load_glossary, fix_deep
 from .build_html import build_html
-from .build_docx import build_docx
-from .html_to_pdf import html_to_pdf
+from ..build_docx import build_docx
+from ..html_to_pdf import html_to_pdf
 
 
 def pick_json_file():

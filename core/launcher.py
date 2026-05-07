@@ -169,8 +169,7 @@ def main():
         if ext == '.json':
             # 拖曳 JSON → 重新產生 HTML/Word/PDF
             print(f"\n  📂 偵測到資料檔：{os.path.basename(file_path)}")
-            print(  "  自動執行重新產生流程...\n")
-            from core.rebuild import _rebuild_from_json_path
+            from core.legacy.rebuild import _rebuild_from_json_path
             _rebuild_from_json_path(file_path)
 
         elif ext in ('.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac', '.txt'):

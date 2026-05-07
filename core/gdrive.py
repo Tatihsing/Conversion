@@ -1,4 +1,5 @@
 import os
+import socket
 from pathlib import Path
 from datetime import datetime
 
@@ -127,10 +128,10 @@ def upload_or_update_file(service, file_path, parent_id):
         print(f"    [ERR] 上傳 {file_path.name} 失敗：{e}")
         return False
 
-def backup_to_drive(audio_path, pdf_path, html_path, txt_path):
+def backup_to_drive(audio_path, pdf_path, html_path, txt_path, meeting_title=None):
     """
     執行完整的 Google Drive 備份流程
-    資料夾架構：[指定總資料夾] -> [上傳日期_使用者名稱] -> [原始錄音檔名稱]
+    資料夾架構：[指定總資料夾] -> [上傳日期_電腦名稱] -> [AI摘要會議名稱]
     """
     service = get_drive_service()
     if not service:
@@ -155,13 +156,19 @@ def backup_to_drive(audio_path, pdf_path, html_path, txt_path):
     if not level1_id:
         return
         
-    # 2. 建立 [原始錄音檔名稱] 資料夾
-    original_audio_name = Path(audio_path).stem if audio_path else "未命名會議"
-    level2_id = find_or_create_folder(service, original_audio_name, level1_id)
+    # 2. 建立 [AI摘要會議名稱] 資料夾
+    # 優先順序：AI 產出的標題 -> 原始音檔名稱 -> "未命名會議"
+    # 確保名稱不包含非法字元
+    if meeting_title and meeting_title.strip():
+        level2_name = meeting_title.strip().replace("/", "_").replace("\\", "_")
+    else:
+        level2_name = Path(audio_path).stem if audio_path else "未命名會議"
+
+    level2_id = find_or_create_folder(service, level2_name, level1_id)
     if not level2_id:
         return
         
-    print(f"[INFO] 備份路徑：{level1_name} / {original_audio_name}")
+    print(f"[INFO] 雲端備份路徑：{level1_name} / {level2_name}")
     
     # 3. 上傳檔案
     files_to_upload = [pdf_path, html_path, txt_path, audio_path]

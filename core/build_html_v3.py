@@ -434,7 +434,7 @@ def build_html_v3(summary, meeting, output_path, gen_time=None):
 <div class="page">
 
   <div class="main-title">{esc(big_title)}</div>
-  {f'<div class="sub-title">{esc(sub_title)}</div>' if sub_title and sub_title != big_title else ''}
+  {f'<div class="sub-title">{esc(sub_title)}</div>' if sub_title and (sub_title.strip() != big_title.strip()) else ''}
   {badge_row}
   {f'<div class="objective">{esc(objective)}</div>' if objective else ''}
 
