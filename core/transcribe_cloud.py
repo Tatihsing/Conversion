@@ -263,6 +263,28 @@ def _transcribe_single(mp3_path: Path, glossary: dict, max_retries: int = 10,
             else:
                 raise
 
+        except Exception as e:
+            err_str = str(e).lower()
+            # 捕捉 upload_file 拋出的 HttpError 或其他 API 錯誤
+            if "403" in err_str or "leaked" in err_str or "permission denied" in err_str or "api_key_invalid" in err_str or "expired" in err_str:
+                print(f"[ERR] API Key 權限錯誤或已失效：{e}")
+                if audio_file:
+                    try:
+                        genai.delete_file(audio_file.name)
+                    except Exception:
+                        pass
+                    audio_file = None
+                    
+                if pool.remove_current_key():
+                    exhausted_keys.clear()
+                    continue
+                else:
+                    print("[ERR] 所有可用的 API Key 均已失效，請更新 api_keys.txt")
+                    raise
+            
+            print(f"[ERR] 未知系統或 API 錯誤：{e}")
+            raise
+
     raise RuntimeError(f"轉錄失敗，已重試 {max_retries} 次")
 
 
