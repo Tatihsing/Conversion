@@ -5,6 +5,7 @@
 # 1. 忽略所有檔案和目錄
 /*
 !/.gitignore
+!/.gitattributes
 !/README.md
 
 # 2. 允許核心程式碼碼目錄
