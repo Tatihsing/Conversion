@@ -129,6 +129,7 @@ def pick_file(title="選擇檔案", filetypes=None):
         # 當 tkinter 不存在時（例如嵌入式 Python），使用 PowerShell 呼叫 Windows 原生視窗
         import subprocess
         ps_script = f"""
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
         Add-Type -AssemblyName System.Windows.Forms
         $f = New-Object System.Windows.Forms.OpenFileDialog
         $f.Title = '{title}'
@@ -137,7 +138,7 @@ def pick_file(title="選擇檔案", filetypes=None):
         """
         try:
             res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], 
-                                 capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                                 capture_output=True, encoding='utf-8', errors='replace', creationflags=subprocess.CREATE_NO_WINDOW)
             path = res.stdout.strip()
             if path:
                 return Path(path)
