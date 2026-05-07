@@ -157,9 +157,12 @@ def check_for_updates(auto_update: bool = False, silent: bool = False) -> bool:
     if auto_update:
         print("[AUTO] 自動更新中...")
         if _has_git():
-            _do_git_pull()
+            success = _do_git_pull()
         else:
-            _do_zip_update()
+            success = _do_zip_update()
+        if success:
+            import sys
+            sys.exit(0)
         return False
 
     print("  輸入 Y 立即自動更新，或按 Enter 略過：", end="", flush=True)
@@ -170,9 +173,13 @@ def check_for_updates(auto_update: bool = False, silent: bool = False) -> bool:
         
     if ans == "y":
         if _has_git():
-            _do_git_pull()
+            success = _do_git_pull()
         else:
-            _do_zip_update()
+            success = _do_zip_update()
+        
+        if success:
+            import sys
+            sys.exit(0)
     else:
         print(f"[INFO] 已略過更新。")
 
