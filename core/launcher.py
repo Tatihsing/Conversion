@@ -29,6 +29,8 @@ def ensure_base_packages():
         "google.generativeai": "google-generativeai",
         "openpyxl": "openpyxl",
         "docx": "python-docx",
+        "googleapiclient": "google-api-python-client",
+        "google.auth": "google-auth-httplib2 google-auth-oauthlib",
     }
     missing = []
     for module, package in packages.items():

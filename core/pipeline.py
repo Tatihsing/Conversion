@@ -384,3 +384,27 @@ def run(file_path=None):
     print(f"  🖨️  PDF 會議記錄：{stem}.pdf")
     print("=" * 50)
 
+    # Step 6：執行雲端備份
+    try:
+        from core.gdrive import backup_to_drive
+        pdf_file = output_dir / f"{stem}.pdf"
+        txt_file = input_file if input_file.suffix.lower() == '.txt' else input_file.with_suffix('.txt')
+        
+        # 尋找原始音檔（如果是文字檔為輸入）
+        audio_file = input_file
+        if audio_file.suffix.lower() == '.txt':
+            for ext in ['.m4a', '.mp3', '.wav']:
+                candidate = audio_file.with_suffix(ext)
+                if candidate.exists():
+                    audio_file = candidate
+                    break
+
+        backup_to_drive(
+            audio_path=str(audio_file) if audio_file.exists() else None,
+            pdf_path=str(pdf_file) if pdf_file.exists() else None,
+            html_path=None, # HTML 已被刪除，不備份
+            txt_path=str(txt_file) if txt_file.exists() else None
+        )
+    except Exception as e:
+        print(f"[ERR] 雲端備份發生錯誤：{e}")
+
