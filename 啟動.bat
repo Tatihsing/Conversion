@@ -83,7 +83,7 @@ if "%~1"=="" (
 )
 set EXIT_CODE=%errorlevel%
 
-:: exit code 2 = Python 已下載更新，bat 接手套用並重啟
+:: exit code 2 = update downloaded, bat will apply it
 if %EXIT_CODE%==2 goto :do_update
 
 if %EXIT_CODE%==1 (
@@ -104,15 +104,15 @@ set "STAGING=%~dp0_update_staging"
 set "REPO_FOLDER=%STAGING%\Conversion-main"
 set "NEW_CORE=%REPO_FOLDER%\core"
 
-:: 確認暫存資料夾存在
+:: check staging folder exists
 if not exist "%NEW_CORE%" (
     echo [ERR] 找不到更新暫存資料夾，更新失敗。
     pause
     goto :eof
 )
 
-:: 用 xcopy 逐檔覆蓋（比刪除整個資料夾更安全，中途失敗不會遺失舊版）
-echo [1/4] 套用新版程式...
+:: xcopy to overwrite files safely
+echo [1/3] 套用新版程式...
 xcopy /R /S /E /Y /Q "%NEW_CORE%\*" "%~dp0core\" >nul
 if errorlevel 1 (
     echo [ERR] 無法套用新版 core，請嘗試手動更新。
@@ -120,20 +120,20 @@ if errorlevel 1 (
     goto :eof
 )
 
-:: 更新外層腳本（start.bat、README.md）
-echo [2/4] 更新啟動腳本...
+:: update launcher scripts
+echo [2/3] 更新啟動腳本...
 for %%F in (start.bat README.md) do (
     if exist "%REPO_FOLDER%\%%F" (
         xcopy /R /Y /Q "%REPO_FOLDER%\%%F" "%~dp0" >nul
     )
 )
-:: 啟動.bat 最後才更新（正在執行中，新版在本次重啟後生效）
+:: update 啟動.bat last (currently running, new version takes effect on next launch)
 if exist "%REPO_FOLDER%\啟動.bat" (
     copy /y "%REPO_FOLDER%\啟動.bat" "%~dp0啟動.bat.new" >nul
     move /y "%~dp0啟動.bat.new" "%~dp0啟動.bat" >nul 2>&1
 )
 
-:: 清除暫存
+:: cleanup
 echo [3/3] 清理暫存檔案...
 rmdir /s /q "%STAGING%" 2>nul
 
