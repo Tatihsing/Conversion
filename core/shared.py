@@ -126,35 +126,61 @@ def pick_file(title="選擇檔案", filetypes=None):
         root.destroy()
         return Path(path) if path else None
     except ImportError:
-        # 當 tkinter 不存在時（例如嵌入式 Python），使用 PowerShell 呼叫 WPF 的現代原生視窗
-        import subprocess
-        
-        # 轉換 filter 格式給 WPF
-        # tkinter 格式: [("名稱", "*.ext1 *.ext2")]
-        # WPF 格式: "名稱|*.ext1;*.ext2|..."
-        ps_filters = []
+        # 當 tkinter 不存在時（例如嵌入式 Python），直接使用 ctypes 呼叫 Windows 底層 API
+        # 這樣能完全繞過 .NET 語系包遺失的問題，保證 100% 顯示系統原生的中文介面
+        import ctypes
+        import ctypes.wintypes as wintypes
+
+        class OPENFILENAME(ctypes.Structure):
+            _fields_ = [
+                ("lStructSize", wintypes.DWORD),
+                ("hwndOwner", wintypes.HWND),
+                ("hInstance", wintypes.HINSTANCE),
+                ("lpstrFilter", wintypes.LPCWSTR),
+                ("lpstrCustomFilter", wintypes.LPWSTR),
+                ("nMaxCustFilter", wintypes.DWORD),
+                ("nFilterIndex", wintypes.DWORD),
+                ("lpstrFile", wintypes.LPWSTR),
+                ("nMaxFile", wintypes.DWORD),
+                ("lpstrFileTitle", wintypes.LPWSTR),
+                ("nMaxFileTitle", wintypes.DWORD),
+                ("lpstrInitialDir", wintypes.LPCWSTR),
+                ("lpstrTitle", wintypes.LPCWSTR),
+                ("Flags", wintypes.DWORD),
+                ("nFileOffset", wintypes.WORD),
+                ("nFileExtension", wintypes.WORD),
+                ("lpstrDefExt", wintypes.LPCWSTR),
+                ("lCustData", wintypes.LPARAM),
+                ("lpfnHook", ctypes.c_void_p),
+                ("lpTemplateName", wintypes.LPCWSTR),
+                ("pvReserved", ctypes.c_void_p),
+                ("dwReserved", wintypes.DWORD),
+                ("FlagsEx", wintypes.DWORD),
+            ]
+
+        # 轉換 filter 格式為 Win32 API 所需的以 \0 分隔字串
+        filters = []
         for name, exts in filetypes:
             ext_list = ";".join(exts.split())
-            ps_filters.append(f"{name}|{ext_list}")
-        ps_filter_str = "|".join(ps_filters)
+            filters.append(f"{name}\0{ext_list}\0")
+        filter_str = "".join(filters) + "\0"
 
-        ps_script = f"""
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::GetCultureInfo('zh-TW')
-        [System.Threading.Thread]::CurrentThread.CurrentUICulture = [System.Globalization.CultureInfo]::GetCultureInfo('zh-TW')
-        Add-Type -AssemblyName PresentationFramework
-        $f = New-Object Microsoft.Win32.OpenFileDialog
-        $f.Title = '{title}'
-        $f.Filter = '{ps_filter_str}'
-        if ($f.ShowDialog() -eq $true) {{ Write-Output $f.FileName }}
-        """
+        ofn = OPENFILENAME()
+        ofn.lStructSize = ctypes.sizeof(OPENFILENAME)
+        ofn.lpstrFile = ctypes.create_unicode_buffer(1024)
+        ofn.nMaxFile = 1024
+        ofn.lpstrTitle = title
+        ofn.lpstrFilter = filter_str
+        # OFN_EXPLORER = 0x00080000 (使用現代化視窗), OFN_FILEMUSTEXIST = 0x00001000
+        ofn.Flags = 0x00080000 | 0x00001000
+
         try:
-            res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], 
-                                 capture_output=True, encoding='utf-8', errors='replace', creationflags=subprocess.CREATE_NO_WINDOW)
-            path = res.stdout.strip()
-            if path:
-                return Path(path)
-        except Exception:
+            # 必須使用 comdlg32.dll
+            if ctypes.windll.comdlg32.GetOpenFileNameW(ctypes.byref(ofn)):
+                path = ofn.lpstrFile.value
+                return Path(path) if path else None
+        except Exception as e:
+            print(f"[WARN] 底層視窗呼叫失敗：{e}")
             pass
 
         # 若 PowerShell 也失敗，才降級為手動輸入
