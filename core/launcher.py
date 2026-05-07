@@ -57,6 +57,50 @@ def ensure_base_packages():
     print()
 
 
+def ensure_ffmpeg():
+    """確保 ffmpeg 可用，若無則自動下載免安裝版至 tools/ 目錄"""
+    from core.transcribe_cloud import _find_ffmpeg
+    ffmpeg_path, ffprobe_path = _find_ffmpeg()
+    if ffmpeg_path and ffprobe_path:
+        return
+
+    print("\n[SETUP] 首次使用，下載音訊處理套件 (ffmpeg) 中（約 40MB），請稍候...")
+    import urllib.request
+    import zipfile
+    import tempfile
+    import shutil
+    from pathlib import Path
+    
+    url = "https://github.com/GyanD/codexffmpeg/releases/download/7.0.1/ffmpeg-7.0.1-essentials_build.zip"
+    root_dir = Path(__file__).parent.parent
+    tools_dir = root_dir / "tools"
+    tools_dir.mkdir(exist_ok=True)
+    zip_path = tools_dir / "ffmpeg.zip"
+    
+    try:
+        urllib.request.urlretrieve(url, zip_path)
+        print("  正在解壓縮...")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+            
+            # 尋找解壓縮後的 bin 資料夾
+            for root, dirs, files in os.walk(temp_dir):
+                if "ffmpeg.exe" in files and "ffprobe.exe" in files:
+                    shutil.copy2(os.path.join(root, "ffmpeg.exe"), tools_dir / "ffmpeg.exe")
+                    shutil.copy2(os.path.join(root, "ffprobe.exe"), tools_dir / "ffprobe.exe")
+                    break
+        print("  [OK] ffmpeg 下載完成！長音訊支援已啟用。")
+    except Exception as e:
+        print(f"  [ERR] ffmpeg 下載失敗：{e}。長音訊切片功能可能會受限。")
+    finally:
+        if zip_path.exists():
+            try:
+                os.remove(zip_path)
+            except Exception:
+                pass
+
+
 def show_menu():
     """顯示主選單"""
     from core.shared import API_KEYS_FILE
@@ -98,6 +142,9 @@ def main():
     """主程式入口"""
     # 安裝基本套件
     ensure_base_packages()
+    
+    # 確保 ffmpeg 存在
+    ensure_ffmpeg()
 
     # 取得版號並印出
     from core.updater import get_version_string, check_for_updates
