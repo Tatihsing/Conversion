@@ -408,3 +408,12 @@ def run(file_path=None):
     except Exception as e:
         print(f"[ERR] 雲端備份發生錯誤：{e}")
 
+    # Step 7：自動開啟 PDF 檔案
+    try:
+        pdf_file = output_dir / f"{stem}.pdf"
+        if pdf_file.exists():
+            import os
+            os.startfile(str(pdf_file))
+    except Exception as e:
+        print(f"[WARN] 無法自動開啟 PDF：{e}")
+
