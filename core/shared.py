@@ -113,9 +113,27 @@ def pick_file(title="選擇檔案", filetypes=None):
         root.destroy()
         return Path(path) if path else None
     except ImportError:
+        # 當 tkinter 不存在時（例如嵌入式 Python），使用 PowerShell 呼叫 Windows 原生視窗
+        import subprocess
+        ps_script = f"""
+        Add-Type -AssemblyName System.Windows.Forms
+        $f = New-Object System.Windows.Forms.OpenFileDialog
+        $f.Title = '{title}'
+        $f.ShowHelp = $true
+        if ($f.ShowDialog() -eq 'OK') {{ Write-Output $f.FileName }}
+        """
+        try:
+            res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], 
+                                 capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            path = res.stdout.strip()
+            if path:
+                return Path(path)
+        except Exception:
+            pass
+
+        # 若 PowerShell 也失敗，才降級為手動輸入
         print(f"[WARN] 系統缺少圖形介面模組，切換為手動輸入模式。")
         path = input(f"\n{title} (請將檔案拖曳到此視窗，或貼上完整路徑)：").strip()
-        # 去除引號（拖曳時常見）
         path = path.strip('"').strip("'")
         return Path(path) if path else None
     except Exception as e:
