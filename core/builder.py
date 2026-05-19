@@ -12,8 +12,12 @@ from pathlib import Path
 
 def safe_copy(src, dst):
     if os.path.exists(dst):
-        # 移除唯讀屬性 (以防萬一)
-        os.chmod(dst, 0o777)
+        # 移除唯讀、隱藏與系統屬性 (解決 Windows 覆蓋隱藏檔案會發生 Permission Denied 的問題)
+        os.system(f'attrib -h -r -s "{dst}" >nul 2>&1')
+        try:
+            os.chmod(dst, 0o777)
+        except Exception:
+            pass
     shutil.copy2(src, dst)
 
 def build():

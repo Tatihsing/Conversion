@@ -1,127 +1,79 @@
 @echo off
 chcp 65001 >nul 2>&1
-title Meeting Auto - Patch Tool
-setlocal enabledelayedexpansion
+title 會議記錄系統 - 一鍵修復更新工具
+cd /d "%~dp0"
 
 echo.
 echo ========================================================
-echo   Meeting Auto - One-Click Patch Tool
+echo   會議記錄系統 - 一鍵修復更新工具
 echo ========================================================
 echo.
-echo   Please ensure the main program is NOT running.
+echo   此補丁將把程式升級至最新版本，
+echo   完成後即可透過轉換程式.exe 自動更新。
+echo.
+echo   請確認「轉換程式.exe」目前沒有在執行中。
 echo.
 pause
 
-:: ── Step 1: Search for start.bat in common locations ────────────────────────
-echo.
-echo [1/5] Searching for Meeting Auto installation...
-echo.
-
-set FOUND_COUNT=0
-set TEMP_LIST=%TEMP%\meeting_auto_found.txt
-if exist "%TEMP_LIST%" del "%TEMP_LIST%"
-
-:: Search common locations
-for %%D in (
-    "%USERPROFILE%\Desktop"
-    "%USERPROFILE%\Documents"
-    "%USERPROFILE%\Downloads"
-    "C:\"
-    "D:\"
-    "E:\"
-    "F:\"
-) do (
-    if exist "%%~D" (
-        for /r "%%~D" %%F in (start.bat) do (
-            set "CANDIDATE=%%~dpF"
-            set "CANDIDATE=!CANDIDATE:~0,-1!"
-            if exist "!CANDIDATE!\core" (
-                if exist "!CANDIDATE!\python\python.exe" (
-                    set /a FOUND_COUNT+=1
-                    echo !FOUND_COUNT!. !CANDIDATE!>> "%TEMP_LIST%"
-                    echo   Found [!FOUND_COUNT!]: !CANDIDATE!
-                )
-            )
-        )
-    )
-)
-
-if %FOUND_COUNT%==0 (
+:: 確認 core 資料夾存在（防止放錯位置）
+if not exist "%~dp0core" (
     echo.
-    echo [ERR] No Meeting Auto installation found.
-    echo       Make sure the program has been run at least once.
+    echo [ERR] 找不到 core 資料夾！
+    echo       請確認此補丁與「轉換程式.exe」放在同一個資料夾。
     echo.
     pause
     exit
 )
 
-:: ── Step 2: Let user pick if multiple found ──────────────────────────────────
-echo.
-if %FOUND_COUNT%==1 (
-    set /p TARGET_DIR=< "%TEMP_LIST%"
-    set TARGET_DIR=!TARGET_DIR:~3!
-    echo   Using: !TARGET_DIR!
-) else (
-    echo   Found %FOUND_COUNT% installations. Enter number to select:
+:: 確認 Python 環境存在
+if not exist "%~dp0python\python.exe" (
     echo.
-    set /p CHOICE="  Your choice: "
-    set LINE_NUM=0
-    for /f "tokens=*" %%L in (%TEMP_LIST%) do (
-        set /a LINE_NUM+=1
-        if !LINE_NUM!==!CHOICE! (
-            set TARGET_LINE=%%L
-        )
-    )
-    set TARGET_DIR=!TARGET_LINE:~3!
-    echo   Selected: !TARGET_DIR!
-)
-
-del "%TEMP_LIST%" 2>nul
-
-if not defined TARGET_DIR (
-    echo [ERR] Invalid selection.
+    echo [ERR] 找不到 Python 環境！
+    echo       請先執行一次「轉換程式.exe」讓它自動安裝環境後，再執行此補丁。
+    echo.
     pause
     exit
 )
 
 echo.
-echo [2/5] Downloading latest version, please wait...
-powershell -Command "Invoke-WebRequest -Uri 'https://github.com/Tatihsing/Conversion/archive/refs/heads/main.zip' -OutFile '!TARGET_DIR!\_patch.zip'"
-if not exist "!TARGET_DIR!\_patch.zip" (
+echo [1/4] 下載最新版本中，請稍候...
+powershell -Command "Invoke-WebRequest -Uri 'https://github.com/Tatihsing/Conversion/archive/refs/heads/main.zip' -OutFile '%~dp0_patch.zip'"
+if not exist "%~dp0_patch.zip" (
     echo.
-    echo [ERR] Download failed.
+    echo [ERR] 下載失敗，請確認網路連線後再試。
     pause
     exit
 )
 
-echo [3/5] Extracting...
-powershell -Command "Expand-Archive -Path '!TARGET_DIR!\_patch.zip' -DestinationPath '!TARGET_DIR!\_patch_temp' -Force"
-if not exist "!TARGET_DIR!\_patch_temp\Conversion-main\core" (
+echo [2/4] 解壓縮中...
+powershell -Command "Expand-Archive -Path '%~dp0_patch.zip' -DestinationPath '%~dp0_patch_temp' -Force"
+if not exist "%~dp0_patch_temp\Conversion-main\core" (
     echo.
-    echo [ERR] Extraction failed.
-    if exist "!TARGET_DIR!\_patch.zip" del "!TARGET_DIR!\_patch.zip"
-    if exist "!TARGET_DIR!\_patch_temp" rmdir /s /q "!TARGET_DIR!\_patch_temp"
+    echo [ERR] 解壓縮失敗或檔案結構異常。
+    if exist "%~dp0_patch.zip" del "%~dp0_patch.zip"
+    if exist "%~dp0_patch_temp" rmdir /s /q "%~dp0_patch_temp"
     pause
     exit
 )
 
-echo [4/5] Applying update...
-xcopy /R /S /E /Y /Q "!TARGET_DIR!\_patch_temp\Conversion-main\core\*" "!TARGET_DIR!\core\" >nul
-xcopy /R /Y /Q "!TARGET_DIR!\_patch_temp\Conversion-main\start.bat" "!TARGET_DIR!\" >nul
-xcopy /R /Y /Q "!TARGET_DIR!\_patch_temp\Conversion-main\啟動.bat" "!TARGET_DIR!\" >nul
-if exist "!TARGET_DIR!\_patch_temp\Conversion-main\README.md" (
-    xcopy /R /Y /Q "!TARGET_DIR!\_patch_temp\Conversion-main\README.md" "!TARGET_DIR!\" >nul
+echo [3/4] 套用更新中...
+xcopy /R /S /E /Y /Q "%~dp0_patch_temp\Conversion-main\core\*" "%~dp0core\" >nul
+xcopy /R /Y /Q "%~dp0_patch_temp\Conversion-main\start.bat" "%~dp0" >nul
+xcopy /R /Y /Q "%~dp0_patch_temp\Conversion-main\啟動.bat" "%~dp0" >nul
+if exist "%~dp0_patch_temp\Conversion-main\README.md" (
+    xcopy /R /Y /Q "%~dp0_patch_temp\Conversion-main\README.md" "%~dp0" >nul
 )
 
-echo [5/5] Cleaning up...
-del "!TARGET_DIR!\_patch.zip" 2>nul
-rmdir /s /q "!TARGET_DIR!\_patch_temp" 2>nul
+echo [4/4] 清理暫存檔案...
+del "%~dp0_patch.zip" 2>nul
+rmdir /s /q "%~dp0_patch_temp" 2>nul
 
 echo.
 echo ========================================================
-echo   Update Completed!
+echo   更新完成！
 echo ========================================================
 echo.
-echo   You can now run Meeting Auto normally.
+echo   程式已升級至最新版本。
+echo   之後直接開啟「轉換程式.exe」即可，有新版本時會自動提示更新。
 echo.
 pause

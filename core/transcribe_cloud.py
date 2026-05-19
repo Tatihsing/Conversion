@@ -101,17 +101,19 @@ def split_audio_chunks(src: Path, chunk_sec: int, tmp_dir: Path) -> list:
     if not _FFMPEG:
         return []
 
-    pattern = str(tmp_dir / 'chunk_%03d') + src.suffix
+    pattern = str(tmp_dir / 'chunk_%03d.mp3')
     cmd = [
         _FFMPEG, '-y', '-i', str(src),
         '-f', 'segment',
         '-segment_time', str(chunk_sec),
         '-reset_timestamps', '1',
-        '-c', 'copy',
+        '-c:a', 'libmp3lame',
+        '-b:a', '64k',
         pattern
     ]
     try:
-        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+        # 由於加入重新編碼，將逾時放寬以應對較長音訊
+        subprocess.run(cmd, check=True, capture_output=True, timeout=300)
     except subprocess.TimeoutExpired:
         print("[WARN] ffmpeg 切割逾時，退回整段模式")
         return []
@@ -119,7 +121,7 @@ def split_audio_chunks(src: Path, chunk_sec: int, tmp_dir: Path) -> list:
         print(f"[WARN] ffmpeg 切割失敗：{e.stderr.decode(errors='replace')[:200]}，退回整段模式")
         return []
 
-    return sorted(tmp_dir.glob(f'chunk_*{src.suffix}'))
+    return sorted(tmp_dir.glob('chunk_*.mp3'))
 
 
 # ── 核心轉錄函式 ────────────────────────────────────────────────────────────
@@ -142,6 +144,7 @@ def _transcribe_single(mp3_path: Path, glossary: dict, max_retries: int = 10,
         "請將這段錄音完整轉成繁體中文逐字稿。"
         "每個發言者換行，能辨識者標注姓名如「張經理：」。"
         "不清楚的地方標 [?]。直接輸出逐字稿，不加任何說明。"
+        "如果這段錄音完全沒有人說話或只有環境噪音，請只輸出「（此段無語音）」。"
     )
 
     audio_file = None
@@ -179,12 +182,21 @@ def _transcribe_single(mp3_path: Path, glossary: dict, max_retries: int = 10,
             try:
                 transcript = resp.text
             except ValueError as e:
-                if "quick accessor" in str(e):
+                # 處理 Gemini 判定無語音而直接 STOP 的情況
+                if resp.candidates and (getattr(resp.candidates[0].finish_reason, "name", "") == "STOP" or resp.candidates[0].finish_reason == 1):
+                    print("  [INFO] 此段音訊未辨識到語音，自動填入（此段無語音）")
+                    transcript = "（此段無語音）"
+                elif "quick accessor" in str(e):
                     raise ValueError(f"Gemini 回傳異常空白，將提高溫度重試（{e}）")
-                raise
+                else:
+                    raise
 
             if not transcript or not transcript.strip():
-                raise ValueError("Gemini 回傳空回應")
+                if resp.candidates and (getattr(resp.candidates[0].finish_reason, "name", "") == "STOP" or resp.candidates[0].finish_reason == 1):
+                    print("  [INFO] 此段音訊未辨識到語音，自動填入（此段無語音）")
+                    transcript = "（此段無語音）"
+                else:
+                    raise ValueError("Gemini 回傳空回應")
 
             # 偵測無限迴圈幻覺
             if re.search(r'(.{20,})\1{4,}', transcript):
