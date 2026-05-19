@@ -111,8 +111,9 @@ def _cleanup_old_updates():
 def _do_zip_download() -> bool:
     """
     下載最新版 ZIP 並解壓至根目錄下的 _update_staging/ 暫存資料夾。
-    實際搬移交由 啟動.bat 在 Python 完全結束後執行。
-    成功後以 exit code 2 退出，bat 偵測到後接手搬移並重啟。
+    接著產生一個獨立的更新腳本放在系統暫存區並執行，
+    然後關閉目前程式，讓暫存腳本接手覆蓋檔案並重新啟動。
+    這完全脫離了外部 exe 或 bat 的限制。
     """
     zip_url = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/archive/refs/heads/{GITHUB_BRANCH}.zip"
     zip_path = ROOT / "_update.zip"
@@ -136,7 +137,43 @@ def _do_zip_download() -> bool:
             print("[ERR] 解壓縮後找不到 core 資料夾，更新中止。")
             return False
 
-        print("[OK] 下載完成！程式即將關閉，由啟動程式接手套用更新...")
+        print("[OK] 下載完成！程式即將自動重啟以套用更新...")
+
+        # 產生獨立的更新批次檔
+        bat_content = f"""@echo off
+chcp 65001 >nul 2>&1
+echo 正在套用更新，請稍候...
+:: 等待 3 秒確保主程式完全關閉
+timeout /t 3 /nobreak >nul
+
+:: 覆寫檔案
+xcopy /R /S /E /Y /Q "{staging_dir}\\{GITHUB_REPO}-{GITHUB_BRANCH}\\core\\*" "{ROOT}\\core\\" >nul
+xcopy /R /Y /Q "{staging_dir}\\{GITHUB_REPO}-{GITHUB_BRANCH}\\start.bat" "{ROOT}\\" >nul
+xcopy /R /Y /Q "{staging_dir}\\{GITHUB_REPO}-{GITHUB_BRANCH}\\啟動.bat" "{ROOT}\\" >nul
+if exist "{staging_dir}\\{GITHUB_REPO}-{GITHUB_BRANCH}\\README.md" (
+    xcopy /R /Y /Q "{staging_dir}\\{GITHUB_REPO}-{GITHUB_BRANCH}\\README.md" "{ROOT}\\" >nul
+)
+
+:: 清理暫存
+rmdir /s /q "{staging_dir}" 2>nul
+
+:: 重新啟動程式 (優先啟動轉換程式.exe，否則啟動.bat)
+if exist "{ROOT}\\轉換程式.exe" (
+    start "" "{ROOT}\\轉換程式.exe"
+) else (
+    start "" "{ROOT}\\啟動.bat"
+)
+
+:: 刪除自己
+del "%~f0"
+"""
+        temp_bat_path = Path(tempfile.gettempdir()) / "meeting_auto_updater.bat"
+        temp_bat_path.write_text(bat_content, encoding='utf-8')
+
+        # 使用 subprocess 獨立執行 bat，使其不依賴目前的 process tree
+        CREATE_NEW_CONSOLE = 0x00000010
+        subprocess.Popen(["cmd.exe", "/c", str(temp_bat_path)], creationflags=CREATE_NEW_CONSOLE)
+
         return True
 
     except Exception as e:
@@ -208,8 +245,8 @@ def check_for_updates(auto_update: bool = False, silent: bool = False) -> bool:
     if choice == "Y":
         success = _do_zip_download()
         if success:
-            # exit code 2 = 通知 bat 接手搬移並重啟
-            sys.exit(2)
+            # 退出程式，讓暫存的 meeting_auto_updater.bat 接手
+            sys.exit(0)
         else:
             print("[WARN] 更新下載失敗，繼續使用目前版本。")
 
