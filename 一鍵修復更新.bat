@@ -86,4 +86,42 @@ if not defined TARGET_DIR (
 
 echo.
 echo [2/5] Downloading latest version, please wait...
-powershell -Command "Invoke-WebRequest -Uri 'https://github.com/Tatihsing/Conversion/archive/refs/heads/main.
+powershell -Command "Invoke-WebRequest -Uri 'https://github.com/Tatihsing/Conversion/archive/refs/heads/main.zip' -OutFile '!TARGET_DIR!\_patch.zip'"
+if not exist "!TARGET_DIR!\_patch.zip" (
+    echo.
+    echo [ERR] Download failed.
+    pause
+    exit
+)
+
+echo [3/5] Extracting...
+powershell -Command "Expand-Archive -Path '!TARGET_DIR!\_patch.zip' -DestinationPath '!TARGET_DIR!\_patch_temp' -Force"
+if not exist "!TARGET_DIR!\_patch_temp\Conversion-main\core" (
+    echo.
+    echo [ERR] Extraction failed.
+    if exist "!TARGET_DIR!\_patch.zip" del "!TARGET_DIR!\_patch.zip"
+    if exist "!TARGET_DIR!\_patch_temp" rmdir /s /q "!TARGET_DIR!\_patch_temp"
+    pause
+    exit
+)
+
+echo [4/5] Applying update...
+xcopy /R /S /E /Y /Q "!TARGET_DIR!\_patch_temp\Conversion-main\core\*" "!TARGET_DIR!\core\" >nul
+xcopy /R /Y /Q "!TARGET_DIR!\_patch_temp\Conversion-main\start.bat" "!TARGET_DIR!\" >nul
+xcopy /R /Y /Q "!TARGET_DIR!\_patch_temp\Conversion-main\啟動.bat" "!TARGET_DIR!\" >nul
+if exist "!TARGET_DIR!\_patch_temp\Conversion-main\README.md" (
+    xcopy /R /Y /Q "!TARGET_DIR!\_patch_temp\Conversion-main\README.md" "!TARGET_DIR!\" >nul
+)
+
+echo [5/5] Cleaning up...
+del "!TARGET_DIR!\_patch.zip" 2>nul
+rmdir /s /q "!TARGET_DIR!\_patch_temp" 2>nul
+
+echo.
+echo ========================================================
+echo   Update Completed!
+echo ========================================================
+echo.
+echo   You can now run Meeting Auto normally.
+echo.
+pause
